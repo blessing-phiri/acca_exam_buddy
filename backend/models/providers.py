@@ -50,8 +50,8 @@ class DeepSeekProvider:
     def __init__(self) -> None:
         self.api_key = _trimmed(os.getenv("DEEPSEEK_API_KEY"))
         self.base_url = _trimmed(os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1"))
-        self.model_name = _trimmed(os.getenv("DEEPSEEK_MODEL", "deepseek-reasoner"))
-        self.timeout_seconds = float(_trimmed(os.getenv("LLM_TIMEOUT_SECONDS", "60")) or 60)
+        self.model_name = _trimmed(os.getenv("DEEPSEEK_MODEL", "deepseek-chat"))
+        self.timeout_seconds = float(_trimmed(os.getenv("LLM_TIMEOUT_SECONDS", "300")) or 300)
 
         if _is_placeholder(self.api_key):
             logger.warning("DEEPSEEK_API_KEY missing or placeholder")

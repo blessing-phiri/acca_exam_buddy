@@ -52,6 +52,7 @@ class APIClient:
         question: Optional[str] = None,
         question_text: Optional[str] = None,
         max_marks: Optional[float] = None,
+        student_name: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Upload a file for marking."""
         files = {"file": (file.name, file, getattr(file, "type", "application/octet-stream"))}
@@ -62,6 +63,8 @@ class APIClient:
             data["question_text"] = question_text
         if max_marks is not None:
             data["max_marks"] = str(max_marks)
+        if student_name:
+            data["student_name"] = student_name
 
         return self._request("POST", "/api/v1/upload", files=files, data=data, timeout=45)
 
@@ -72,6 +75,7 @@ class APIClient:
         paper: str = "AA",
         question_number: Optional[str] = None,
         max_marks: Optional[float] = None,
+        student_name: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Submit a typed answer directly from frontend."""
         payload: Dict[str, Any] = {
@@ -83,6 +87,8 @@ class APIClient:
             payload["question_number"] = question_number
         if max_marks is not None:
             payload["max_marks"] = max_marks
+        if student_name:
+            payload["student_name"] = student_name
         return self._request("POST", "/api/v1/upload/text", json=payload, timeout=60)
 
     def upload_tutor_guide(

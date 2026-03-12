@@ -38,6 +38,7 @@ class TextUploadRequest(BaseModel):
     paper: str = "AA"
     question_number: Optional[str] = None
     max_marks: Optional[float] = Field(default=None, gt=0, le=100)
+    student_name: Optional[str] = None
 
 
 def _ensure_store_files() -> None:
@@ -90,6 +91,13 @@ def _clean_question_text(question_text: Optional[str]) -> Optional[str]:
     if question_text is None:
         return None
     cleaned = " ".join(question_text.split()).strip()
+    return cleaned or None
+
+
+def _clean_student_name(student_name: Optional[str]) -> Optional[str]:
+    if student_name is None:
+        return None
+    cleaned = " ".join(student_name.split()).strip()
     return cleaned or None
 
 
@@ -166,6 +174,7 @@ def _build_result_payload(
     filename: str,
     process_result: Dict[str, Any],
     mark_result: Dict[str, Any],
+    student_name: Optional[str] = None,
 ) -> Dict[str, Any]:
     total_marks = float(mark_result.get("total_marks", 0.0))
     max_marks = float(mark_result.get("max_marks", 16.0))
@@ -174,6 +183,7 @@ def _build_result_payload(
     return {
         "id": result_id,
         "upload_id": upload_id,
+        "student_name": student_name,
         "filename": filename,
         "total_marks": total_marks,
         "max_marks": max_marks,
@@ -207,6 +217,7 @@ async def upload_file(
     question_number: Optional[str] = Form(None),
     question_text: Optional[str] = Form(None),
     max_marks: Optional[float] = Form(None),
+    student_name: Optional[str] = Form(None),
 ):
     """Upload a file for marking."""
     if not file.filename:
@@ -249,6 +260,7 @@ async def upload_file(
             "question_number": question_number,
             "question_text": _clean_question_text(question_text),
             "max_marks": max_marks,
+            "student_name": _clean_student_name(student_name),
             "status": "pending",
             "created_at": now,
             "updated_at": now,
@@ -279,6 +291,7 @@ async def upload_text_answer(payload: TextUploadRequest):
 
     upload_id = str(uuid.uuid4())
     now = datetime.now().isoformat()
+    student_name = _clean_student_name(payload.student_name)
 
     with _STORE_LOCK:
         uploads[upload_id] = {
@@ -291,6 +304,7 @@ async def upload_text_answer(payload: TextUploadRequest):
             "question_number": payload.question_number,
             "question_text": question_text,
             "max_marks": payload.max_marks,
+            "student_name": student_name,
             "status": "marking",
             "created_at": now,
             "updated_at": now,
@@ -315,6 +329,7 @@ async def upload_text_answer(payload: TextUploadRequest):
                 "question_number": payload.question_number,
                 "source_file": "typed_answer.txt",
                 "question_text": question_text,
+                "student_name": student_name,
             },
         )
         _set_upload_state(upload_id, "marking", student_answer_ingest=answer_ingest)
@@ -333,6 +348,7 @@ async def upload_text_answer(payload: TextUploadRequest):
                 "upload_id": upload_id,
                 "question_number": payload.question_number,
                 "source": "typed",
+                "student_name": student_name,
             },
         )
     except Exception as exc:  # noqa: BLE001
@@ -346,6 +362,7 @@ async def upload_text_answer(payload: TextUploadRequest):
         filename="typed_answer.txt",
         process_result=process_result,
         mark_result=mark_result,
+        student_name=student_name,
     )
 
     _persist_result(result_id, result_payload)
@@ -380,6 +397,7 @@ async def get_status(upload_id: str):
     return {
         "upload_id": upload_id,
         "filename": upload["filename"],
+        "student_name": upload.get("student_name"),
         "status": upload["status"],
         "progress": progress_map.get(upload["status"], 0),
         "result_id": upload.get("result_id"),
@@ -425,6 +443,7 @@ def process_file_background(upload_id: str) -> None:
                     "question_number": upload.get("question_number"),
                     "source_file": upload.get("filename"),
                     "question_text": upload.get("question_text"),
+                    "student_name": upload.get("student_name"),
                 },
             )
             _set_upload_state(upload_id, "cleaning", student_answer_ingest=answer_ingest)
@@ -447,6 +466,7 @@ def process_file_background(upload_id: str) -> None:
                         "upload_id": upload_id,
                         "question_number": upload.get("question_number"),
                         "question_text": upload.get("question_text"),
+                        "student_name": upload.get("student_name"),
                     },
                 )
             )
@@ -461,6 +481,7 @@ def process_file_background(upload_id: str) -> None:
             filename=upload["filename"],
             process_result=process_result,
             mark_result=mark_result,
+            student_name=upload.get("student_name"),
         )
 
         _persist_result(result_id, result_payload)
