@@ -7,8 +7,8 @@ from __future__ import annotations
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-
 from backend.api import knowledge, upload
+from backend.api import mark
 
 
 load_dotenv()
@@ -37,7 +37,7 @@ async def root():
 async def health_check():
     return {"status": "healthy"}
 
-
+app.include_router(mark.router)
 app.include_router(upload.router)
 app.include_router(knowledge.router)
 
