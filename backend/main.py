@@ -1,4 +1,4 @@
-"""ACCA AA AI Marker backend entrypoint."""
+"""ACCA Exam Buddie backend entrypoint."""
 
 from __future__ import annotations
 
@@ -22,9 +22,9 @@ cors_origins = _parse_cors_origins(os.getenv("CORS_ORIGINS", "*"))
 allow_credentials = "*" not in cors_origins
 
 app = FastAPI(
-    title="ACCA AA AI Marker API",
-    description="API for marking ACCA AA exam answers",
-    version="0.2.0",
+    title="ACCA Exam Buddie API",
+    description="API for marking ACCA exam answers",
+    version="0.3.0",
 )
 
 app.add_middleware(
@@ -38,7 +38,7 @@ app.add_middleware(
 
 @app.get("/")
 async def root():
-    return {"message": "ACCA AA AI Marker API", "status": "running", "version": "0.2.0"}
+    return {"message": "ACCA Exam Buddie API", "status": "running", "version": "0.3.0"}
 
 
 @app.get("/health")

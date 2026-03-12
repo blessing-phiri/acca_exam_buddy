@@ -1,14 +1,14 @@
-"""
-Knowledge base API routes for ingestion, retrieval, CRUD, and scraping.
-"""
+"""Knowledge base API routes for ingestion, retrieval, CRUD, and scraping."""
 
 from __future__ import annotations
 
 import os
+import shutil
+import uuid
 from pathlib import Path
 from typing import Any, Dict, Literal, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
 from backend.services.knowledge_base import KnowledgeBase
@@ -93,6 +93,76 @@ async def ingest_local(payload: LocalIngestRequest):
         raise HTTPException(status_code=400, detail=result.get("error", "Ingestion failed"))
 
     return result
+
+
+@router.post("/api/v1/knowledge/upload-guide")
+async def upload_tutor_guide(
+    file: UploadFile = File(...),
+    doc_type: Literal["marking_scheme", "examiner_report", "technical_article"] = Form(...),
+    paper: str = Form("AA"),
+    year: Optional[str] = Form(None),
+    question_type: Optional[str] = Form(None),
+    notes: Optional[str] = Form(None),
+):
+    """Tutor-facing guide upload that saves and ingests in one step."""
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="Filename is required")
+
+    ext = Path(file.filename).suffix.lower()
+    strict_ext = {".pdf", ".docx"}
+    technical_ext = strict_ext | {".txt", ".md", ".html", ".htm"}
+
+    allowed = technical_ext if doc_type == "technical_article" else strict_ext
+    if ext not in allowed:
+        allowed_text = ", ".join(sorted(allowed))
+        raise HTTPException(status_code=400, detail=f"Invalid file type for {doc_type}. Allowed: {allowed_text}")
+
+    file.file.seek(0, 2)
+    file_size = file.file.tell()
+    file.file.seek(0)
+    if file_size > 25 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="File too large. Max 25MB allowed.")
+
+    base_dir = Path("data/raw/tutor_guides") / doc_type
+    base_dir.mkdir(parents=True, exist_ok=True)
+
+    original_name = Path(file.filename).name
+    safe_name = f"{uuid.uuid4()}_{original_name.replace(' ', '_')}"
+    save_path = base_dir / safe_name
+
+    try:
+        with open(save_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"Failed to save tutor guide: {exc}") from exc
+
+    metadata = {
+        "paper": paper,
+        "year": year or "unknown",
+        "question_type": question_type,
+        "source_type": "tutor_upload",
+        "original_filename": original_name,
+    }
+    if notes:
+        metadata["notes"] = notes
+
+    if doc_type == "marking_scheme":
+        result = kb.ingest_marking_scheme(str(save_path), metadata)
+    elif doc_type == "examiner_report":
+        result = kb.ingest_examiner_report(str(save_path), metadata)
+    else:
+        result = kb.ingest_technical_document(str(save_path), metadata)
+
+    if not result.get("success"):
+        raise HTTPException(status_code=400, detail=result.get("error", "Tutor guide ingestion failed"))
+
+    return {
+        "success": True,
+        "doc_type": doc_type,
+        "saved_path": str(save_path),
+        "file_size": file_size,
+        "ingestion": result,
+    }
 
 
 @router.post("/api/v1/knowledge/ingest/web")

@@ -1,4 +1,4 @@
-"""Streamlit frontend for ACCA AA AI Marker."""
+"""Client-facing Streamlit app for ACCA Exam Buddie."""
 
 from __future__ import annotations
 
@@ -16,23 +16,23 @@ except ImportError:
     from services.api import APIClient
 
 
+APP_NAME = "ACCA Exam Buddie"
 BACKEND_URL = os.getenv("API_URL", "http://localhost:8000")
 POLL_INTERVAL_SECONDS = float(os.getenv("POLL_INTERVAL_SECONDS", "1"))
 DEFAULT_WAIT_SECONDS = int(os.getenv("DEFAULT_WAIT_SECONDS", "120"))
 FRONTEND_MODE = os.getenv("FRONTEND_MODE", "client").strip().lower()
-CLIENT_MODE = FRONTEND_MODE != "admin"
+ADMIN_MODE = FRONTEND_MODE == "admin"
 
 
 def _init_state() -> None:
     defaults: Dict[str, Any] = {
-        "last_result": None,
         "last_upload_id": None,
+        "last_result": None,
         "last_run_at": None,
         "jobs": [],
+        "last_tutor_ingest": None,
         "llm_health": None,
-        "llm_health_checked_at": None,
         "kb_stats": None,
-        "kb_stats_checked_at": None,
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -46,28 +46,19 @@ def _safe_float(value: Any, fallback: float = 0.0) -> float:
         return fallback
 
 
-def _fmt_iso(raw: Optional[str]) -> str:
-    if not raw:
-        return "-"
-    try:
-        return datetime.fromisoformat(raw).strftime("%Y-%m-%d %H:%M:%S")
-    except Exception:  # noqa: BLE001
-        return raw
-
-
 def _status_copy(status: str) -> tuple[str, str]:
     key = (status or "").strip().lower()
-    labels = {
-        "pending": ("Queued", "Your file is waiting to be processed."),
+    mapping = {
+        "pending": ("Queued", "Your submission is waiting in the queue."),
         "extracting": ("Reading File", "We are extracting text from your document."),
-        "cleaning": ("Preparing Content", "We are cleaning and structuring your answer."),
-        "analyzing": ("Analyzing", "We are detecting question structure and context."),
-        "marking": ("Marking", "The AI marker is scoring your answer now."),
-        "complete": ("Complete", "Your feedback is ready."),
-        "completed": ("Complete", "Your feedback is ready."),
+        "cleaning": ("Preparing", "We are cleaning and structuring your answer."),
+        "analyzing": ("Analyzing", "We are understanding question boundaries and context."),
+        "marking": ("Marking", "The AI marker is scoring your answer."),
+        "complete": ("Complete", "Your result is ready."),
+        "completed": ("Complete", "Your result is ready."),
         "failed": ("Failed", "Something went wrong. Please try again."),
     }
-    return labels.get(key, (status or "Unknown", ""))
+    return mapping.get(key, (status or "Unknown", ""))
 
 
 def _job_index(upload_id: str) -> int:
@@ -79,42 +70,32 @@ def _job_index(upload_id: str) -> int:
 
 def _upsert_job(job: Dict[str, Any]) -> None:
     idx = _job_index(job["upload_id"])
+    payload = {**job, "updated_at": datetime.now().isoformat()}
     if idx >= 0:
-        existing = st.session_state.jobs[idx]
-        st.session_state.jobs[idx] = {**existing, **job, "updated_at": datetime.now().isoformat()}
+        st.session_state.jobs[idx] = {**st.session_state.jobs[idx], **payload}
     else:
-        st.session_state.jobs.insert(0, {**job, "updated_at": datetime.now().isoformat()})
+        st.session_state.jobs.insert(0, payload)
 
 
 def _refresh_job(api_client: APIClient, upload_id: str, fetch_result: bool = False) -> Dict[str, Any]:
-    payload = api_client.get_status(upload_id)
+    status_payload = api_client.get_status(upload_id)
     _upsert_job(
         {
             "upload_id": upload_id,
-            "status": payload.get("status", "unknown"),
-            "progress": int(payload.get("progress", 0)),
-            "result_id": payload.get("result_id"),
-            "error": payload.get("error"),
+            "status": status_payload.get("status", "unknown"),
+            "progress": int(status_payload.get("progress", 0)),
+            "result_id": status_payload.get("result_id"),
+            "error": status_payload.get("error"),
         }
     )
 
-    if fetch_result and payload.get("result_id"):
-        result = api_client.get_result(payload["result_id"])
+    result_id = status_payload.get("result_id")
+    if fetch_result and result_id:
+        result = api_client.get_result(result_id)
         st.session_state.last_result = result
         st.session_state.last_run_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    return payload
-
-
-def _refresh_active_jobs(api_client: APIClient) -> None:
-    for job in list(st.session_state.jobs):
-        state = (job.get("status") or "").lower()
-        if state in {"failed", "complete", "completed"}:
-            continue
-        try:
-            _refresh_job(api_client, job["upload_id"], fetch_result=True)
-        except Exception as exc:  # noqa: BLE001
-            _upsert_job({"upload_id": job["upload_id"], "status": "failed", "error": str(exc)})
+    return status_payload
 
 
 def _score_band(percentage: float) -> str:
@@ -128,8 +109,8 @@ def _score_band(percentage: float) -> str:
 
 
 st.set_page_config(
-    page_title="ACCA AA Marker",
-    page_icon=":ledger:",
+    page_title=APP_NAME,
+    page_icon=":books:",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -147,9 +128,8 @@ st.markdown(
             --ink: #103f39;
             --teal: #0f766e;
             --teal-dark: #115e59;
-            --mint: #d8f4ef;
-            --edge: #d3e5e2;
             --soft: #f7fcfb;
+            --edge: #d3e5e2;
             --muted: #5f7470;
         }
 
@@ -164,18 +144,18 @@ st.markdown(
 
         .hero {
             background: linear-gradient(125deg, #0f766e 0%, #115e59 50%, #134e4a 100%);
-            border: 1px solid rgba(255,255,255,0.2);
             border-radius: 18px;
             padding: 24px;
             color: #f3fffd;
             margin-bottom: 14px;
             box-shadow: 0 10px 24px rgba(15, 118, 110, 0.18);
+            border: 1px solid rgba(255,255,255,0.2);
         }
 
         .hero h1 {
             font-family: "Space Grotesk", sans-serif;
             margin: 0;
-            font-size: 2.05rem;
+            font-size: 2.1rem;
             letter-spacing: -0.02em;
         }
 
@@ -184,288 +164,392 @@ st.markdown(
             font-size: 1.03rem;
             opacity: 0.96;
         }
-
-        .tiny {
-            color: var(--muted);
-            font-size: 0.9rem;
-        }
     </style>
     """,
     unsafe_allow_html=True,
 )
 
 st.markdown(
-    """
+    f"""
     <div class="hero">
-        <h1>ACCA AA AI Marker</h1>
-        <p>Upload your answer, wait a moment, and get clear marks with practical feedback.</p>
+        <h1>{APP_NAME}</h1>
+        <p>Upload or type an ACCA answer, include the question context, and receive clear marks with practical feedback.</p>
     </div>
     """,
     unsafe_allow_html=True,
 )
 
 with st.sidebar:
-    st.header("Student Workspace")
+    st.header("Workspace")
     if backend_ok:
         st.success("Service is online")
     else:
         st.error("Service is offline")
-        st.caption("Please try again in a moment.")
 
-    if CLIENT_MODE:
-        st.markdown("### How To Use")
-        st.markdown("1. Upload your PDF or DOCX answer")
-        st.markdown("2. Wait while we process and mark")
-        st.markdown("3. Read your score and improvement notes")
-    else:
-        st.caption(f"Mode: `{FRONTEND_MODE}`")
-        st.markdown(f"Backend URL: `{BACKEND_URL}`")
-        c1, c2 = st.columns(2)
-        with c1:
-            if st.button("LLM Health", use_container_width=True, disabled=not backend_ok):
+    st.markdown("### Quick Start")
+    st.markdown("1. Paste or upload the question context")
+    st.markdown("2. Upload your answer file or type your answer")
+    st.markdown("3. Review marks and feedback")
+
+    if ADMIN_MODE:
+        st.divider()
+        st.caption(f"Admin mode | Backend: `{BACKEND_URL}`")
+        if st.button("Check LLM Health", use_container_width=True, disabled=not backend_ok):
+            try:
+                st.session_state.llm_health = api_client.get_llm_health()
+            except Exception as exc:  # noqa: BLE001
+                st.session_state.llm_health = {"error": str(exc)}
+
+        if st.button("Check KB Stats", use_container_width=True, disabled=not backend_ok):
+            try:
+                st.session_state.kb_stats = api_client.get_knowledge_stats()
+            except Exception as exc:  # noqa: BLE001
+                st.session_state.kb_stats = {"error": str(exc)}
+
+metric_1, metric_2, metric_3 = st.columns(3)
+metric_1.metric("Backend", "Online" if backend_ok else "Offline")
+metric_2.metric("Submissions", len(st.session_state.jobs))
+metric_3.metric("Last Result", st.session_state.last_run_at or "-")
+
+main_tabs = ["Student", "Tutor", "Results"]
+if ADMIN_MODE:
+    main_tabs.append("Admin")
+
+tabs = st.tabs(main_tabs)
+student_tab = tabs[0]
+tutor_tab = tabs[1]
+results_tab = tabs[2]
+admin_tab = tabs[3] if ADMIN_MODE else None
+
+with student_tab:
+    st.markdown("### Student Workspace")
+    student_subtabs = st.tabs(["Upload Document", "Type Answer", "Track Submission"])
+
+    with student_subtabs[0]:
+        st.caption("Best when your answer is already in PDF or DOCX.")
+        with st.form("student_upload_form", clear_on_submit=False):
+            question_text = st.text_area(
+                "Question Context",
+                placeholder="Paste the full exam question or requirement here...",
+                help="Required: this gives the marker the exact context.",
+                height=130,
+            )
+            upload_file = st.file_uploader("Answer File", type=["pdf", "docx"])
+
+            col_1, col_2, col_3, col_4 = st.columns([1.0, 1.0, 1.0, 1.2])
+            with col_1:
+                paper = st.selectbox("Paper", ["AA"], key="upload_paper")
+            with col_2:
+                question_number = st.text_input("Question No. (optional)", placeholder="e.g. 1(b)")
+            with col_3:
+                max_marks = st.number_input("Max Marks", min_value=1.0, max_value=100.0, value=16.0, step=1.0)
+            with col_4:
+                wait_seconds = st.slider("Wait (seconds)", min_value=30, max_value=300, value=DEFAULT_WAIT_SECONDS, step=10)
+
+            submit_upload = st.form_submit_button("Submit and Mark", type="primary", use_container_width=True)
+
+        if submit_upload:
+            if not question_text.strip():
+                st.warning("Please provide the question context.")
+            elif not upload_file:
+                st.warning("Please upload a PDF or DOCX answer file.")
+            elif not backend_ok:
+                st.error("Service is currently offline. Please try again shortly.")
+            else:
                 try:
-                    st.session_state.llm_health = api_client.get_llm_health()
-                    st.session_state.llm_health_checked_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    with st.spinner("Uploading and starting marking..."):
+                        upload_resp = api_client.upload_file(
+                            file=upload_file,
+                            paper=paper,
+                            question=question_number or None,
+                            question_text=question_text,
+                            max_marks=max_marks,
+                        )
+
+                    upload_id = upload_resp["upload_id"]
+                    st.session_state.last_upload_id = upload_id
+                    _upsert_job(
+                        {
+                            "upload_id": upload_id,
+                            "filename": getattr(upload_file, "name", "uploaded_file"),
+                            "status": "pending",
+                            "progress": 5,
+                            "result_id": None,
+                        }
+                    )
+
+                    st.success("Upload received. Processing has started.")
+                    progress = st.progress(5)
+                    info = st.empty()
+
+                    start = time.time()
+                    payload: Dict[str, Any] = {}
+                    done = False
+                    while time.time() - start <= wait_seconds:
+                        payload = _refresh_job(api_client, upload_id, fetch_result=False)
+                        status = payload.get("status", "pending")
+                        pct = max(0, min(100, int(payload.get("progress", 0))))
+                        label, helper = _status_copy(status)
+                        progress.progress(pct)
+                        info.info(f"{label} ({pct}%)\n\n{helper}")
+
+                        if status.lower() in {"complete", "completed", "failed"}:
+                            done = True
+                            break
+                        time.sleep(POLL_INTERVAL_SECONDS)
+
+                    final_status = (payload.get("status") or "").lower()
+                    if done and final_status in {"complete", "completed"} and payload.get("result_id"):
+                        st.session_state.last_result = api_client.get_result(payload["result_id"])
+                        st.session_state.last_run_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        _upsert_job({"upload_id": upload_id, "status": "complete", "progress": 100, "result_id": payload["result_id"]})
+                        st.success("Marking complete. Check the Results tab.")
+                    elif done and final_status == "failed":
+                        st.error(payload.get("error") or "Processing failed.")
+                    else:
+                        st.info("Still processing. Use Track Submission to refresh later.")
                 except Exception as exc:  # noqa: BLE001
-                    st.session_state.llm_health = {"error": str(exc)}
-                    st.session_state.llm_health_checked_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        with c2:
-            if st.button("KB Stats", use_container_width=True, disabled=not backend_ok):
+                    st.error(f"Could not complete upload: {exc}")
+
+    with student_subtabs[1]:
+        st.caption("Best when students want to type directly in the app.")
+        with st.form("student_typed_form", clear_on_submit=False):
+            typed_question = st.text_area(
+                "Question Context",
+                placeholder="Paste the full exam question or requirement here...",
+                height=120,
+            )
+            typed_answer = st.text_area(
+                "Your Answer",
+                placeholder="Type your answer here...",
+                height=220,
+            )
+
+            t1, t2, t3 = st.columns([1.0, 1.0, 1.0])
+            with t1:
+                typed_paper = st.selectbox("Paper", ["AA"], key="typed_paper")
+            with t2:
+                typed_qnum = st.text_input("Question No. (optional)", key="typed_qnum", placeholder="e.g. 1(b)")
+            with t3:
+                typed_max = st.number_input("Max Marks", min_value=1.0, max_value=100.0, value=16.0, step=1.0, key="typed_max")
+
+            submit_typed = st.form_submit_button("Mark Typed Answer", type="primary", use_container_width=True)
+
+        if submit_typed:
+            if not typed_question.strip():
+                st.warning("Please provide the question context.")
+            elif not typed_answer.strip():
+                st.warning("Please type the student answer.")
+            elif not backend_ok:
+                st.error("Service is currently offline. Please try again shortly.")
+            else:
                 try:
-                    st.session_state.kb_stats = api_client.get_knowledge_stats()
-                    st.session_state.kb_stats_checked_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    with st.spinner("Marking typed answer..."):
+                        payload = api_client.upload_text_answer(
+                            question_text=typed_question,
+                            answer_text=typed_answer,
+                            paper=typed_paper,
+                            question_number=typed_qnum or None,
+                            max_marks=typed_max,
+                        )
+
+                    upload_id = payload.get("upload_id")
+                    result_id = payload.get("result_id")
+                    result = payload.get("result") or {}
+
+                    if upload_id:
+                        st.session_state.last_upload_id = upload_id
+                        _upsert_job(
+                            {
+                                "upload_id": upload_id,
+                                "filename": "typed_answer.txt",
+                                "status": "complete",
+                                "progress": 100,
+                                "result_id": result_id,
+                            }
+                        )
+
+                    st.session_state.last_result = result
+                    st.session_state.last_run_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    st.success("Typed answer marked successfully. Open the Results tab.")
                 except Exception as exc:  # noqa: BLE001
-                    st.session_state.kb_stats = {"error": str(exc)}
-                    st.session_state.kb_stats_checked_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    st.error(f"Could not mark typed answer: {exc}")
 
-        if st.session_state.llm_health_checked_at:
-            st.caption(f"LLM checked: {st.session_state.llm_health_checked_at}")
-            with st.expander("LLM Details"):
-                st.json(st.session_state.llm_health)
+    with student_subtabs[2]:
+        st.caption("Refresh the latest submission if you left before processing finished.")
+        if not st.session_state.last_upload_id:
+            st.info("No submission tracked yet.")
+        else:
+            st.write(f"Latest Upload ID: `{st.session_state.last_upload_id}`")
+            if st.button("Refresh Latest Status", use_container_width=True):
+                try:
+                    payload = _refresh_job(api_client, st.session_state.last_upload_id, fetch_result=True)
+                    label, helper = _status_copy(payload.get("status", "unknown"))
+                    st.success(f"Status: {label}")
+                    if helper:
+                        st.caption(helper)
+                except Exception as exc:  # noqa: BLE001
+                    st.error(f"Could not refresh status: {exc}")
 
-        if st.session_state.kb_stats_checked_at:
-            st.caption(f"KB checked: {st.session_state.kb_stats_checked_at}")
-            with st.expander("KB Details"):
-                st.json(st.session_state.kb_stats)
+with tutor_tab:
+    st.markdown("### Tutor Workspace")
+    st.caption("Upload custom marking guides when your classroom questions differ from built-in resources.")
 
-summary_col_1, summary_col_2, summary_col_3 = st.columns(3)
-summary_col_1.metric("Backend", "Online" if backend_ok else "Offline")
-summary_col_2.metric("Uploads This Session", len(st.session_state.jobs))
-summary_col_3.metric("Last Completed", st.session_state.last_run_at or "-")
+    with st.form("tutor_guide_upload_form", clear_on_submit=False):
+        guide_file = st.file_uploader("Guide File", type=["pdf", "docx", "txt", "md", "html", "htm"], key="guide_file")
 
-if CLIENT_MODE:
-    tabs = st.tabs(["Submit Answer", "My Result"])
-    tab_submit, tab_result = tabs
-    tab_operations = None
-else:
-    tabs = st.tabs(["Submit Answer", "My Result", "Operations"])
-    tab_submit, tab_result, tab_operations = tabs
+        g1, g2, g3, g4 = st.columns([1.2, 1.0, 1.0, 1.0])
+        with g1:
+            doc_type = st.selectbox(
+                "Guide Type",
+                options=["marking_scheme", "examiner_report", "technical_article"],
+                format_func=lambda x: {
+                    "marking_scheme": "Marking Scheme",
+                    "examiner_report": "Examiner Report",
+                    "technical_article": "Technical Reference",
+                }[x],
+            )
+        with g2:
+            guide_paper = st.selectbox("Paper", ["AA"], key="guide_paper")
+        with g3:
+            guide_year = st.text_input("Year (optional)", placeholder="e.g. 2025")
+        with g4:
+            guide_qtype = st.text_input("Question Type (optional)", placeholder="e.g. audit_risk")
 
-with tab_submit:
-    st.markdown("### Submit Your Answer")
-    st.caption("Accepted file types: PDF and DOCX")
+        guide_notes = st.text_area("Notes (optional)", placeholder="Any tutor notes for this guide", height=90)
 
-    with st.form("upload_form", clear_on_submit=False):
-        uploaded_file = st.file_uploader("Answer File", type=["pdf", "docx"])
+        submit_guide = st.form_submit_button("Upload Guide", type="primary", use_container_width=True)
 
-        row_1, row_2, row_3 = st.columns([1.0, 1.1, 1.2])
-        with row_1:
-            paper = st.selectbox("Paper", ["AA"])
-        with row_2:
-            question_number = st.text_input("Question (optional)", placeholder="e.g. 1(b)")
-        with row_3:
-            wait_seconds = st.slider("Wait for result (seconds)", min_value=30, max_value=300, value=DEFAULT_WAIT_SECONDS, step=10)
-
-        submit = st.form_submit_button("Upload and Mark", type="primary", use_container_width=True)
-
-    if submit:
-        if not uploaded_file:
-            st.warning("Please upload your answer file first.")
+    if submit_guide:
+        if not guide_file:
+            st.warning("Please select a guide file to upload.")
         elif not backend_ok:
-            st.error("The marking service is currently offline. Please try again shortly.")
+            st.error("Service is currently offline. Please try again shortly.")
         else:
             try:
-                with st.spinner("Uploading your file..."):
-                    upload_response = api_client.upload_file(uploaded_file, paper, question_number or None)
-
-                upload_id = upload_response["upload_id"]
-                st.session_state.last_upload_id = upload_id
-                _upsert_job(
-                    {
-                        "upload_id": upload_id,
-                        "filename": getattr(uploaded_file, "name", "uploaded_file"),
-                        "paper": paper,
-                        "question_number": question_number,
-                        "status": "pending",
-                        "progress": 5,
-                        "result_id": None,
-                        "created_at": datetime.now().isoformat(),
-                    }
-                )
-
-                st.success("Upload successful. Marking has started.")
-                progress = st.progress(5)
-                status_box = st.empty()
-
-                started_at = time.time()
-                latest_payload: Dict[str, Any] = {}
-                finished = False
-
-                while time.time() - started_at <= wait_seconds:
-                    latest_payload = _refresh_job(api_client, upload_id, fetch_result=False)
-                    state = (latest_payload.get("status") or "pending").lower()
-                    pct = max(0, min(100, int(latest_payload.get("progress", 0))))
-                    progress.progress(pct)
-                    label, helper = _status_copy(state)
-                    status_box.info(f"{label} ({pct}%)\n\n{helper}")
-
-                    if state in {"complete", "completed", "failed"}:
-                        finished = True
-                        break
-                    time.sleep(POLL_INTERVAL_SECONDS)
-
-                final_state = (latest_payload.get("status") or "").lower()
-                if finished and final_state in {"complete", "completed"}:
-                    result_id = latest_payload.get("result_id")
-                    if result_id:
-                        result = api_client.get_result(result_id)
-                        st.session_state.last_result = result
-                        st.session_state.last_run_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                        _upsert_job({"upload_id": upload_id, "status": "complete", "progress": 100, "result_id": result_id})
-                        st.success("Your result is ready in the My Result tab.")
-                    else:
-                        st.warning("Marking completed, but no result ID was returned. Please refresh from Operations.")
-                elif finished and final_state == "failed":
-                    error_msg = str(latest_payload.get("error") or "Processing failed. Please retry.")
-                    _upsert_job({"upload_id": upload_id, "status": "failed", "error": error_msg})
-                    st.error(error_msg)
-                else:
-                    st.info("Your file is still processing. You can check it again in a few moments.")
-
+                with st.spinner("Uploading and ingesting guide..."):
+                    ingest_payload = api_client.upload_tutor_guide(
+                        file=guide_file,
+                        doc_type=doc_type,
+                        paper=guide_paper,
+                        year=guide_year or None,
+                        question_type=guide_qtype or None,
+                        notes=guide_notes or None,
+                    )
+                st.session_state.last_tutor_ingest = ingest_payload
+                st.success("Tutor guide uploaded and ingested successfully.")
             except Exception as exc:  # noqa: BLE001
-                st.error(f"Could not process this upload: {exc}")
+                st.error(f"Guide upload failed: {exc}")
 
-with tab_result:
-    st.markdown("### My Result")
+    if st.session_state.last_tutor_ingest:
+        latest = st.session_state.last_tutor_ingest
+        st.markdown("#### Latest Tutor Upload")
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Type", latest.get("doc_type", "-"))
+        c2.metric("Stored", "Yes" if latest.get("saved_path") else "No")
+        c3.metric("Chunks", (latest.get("ingestion") or {}).get("chunk_count", 0))
+        with st.expander("Details"):
+            st.json(latest)
+
+with results_tab:
+    st.markdown("### Results")
     result = st.session_state.last_result
 
     if not result:
-        st.info("No result yet. Submit an answer in the first tab.")
+        st.info("No result available yet. Submit from the Student workspace.")
     else:
         total_marks = _safe_float(result.get("total_marks"))
         max_marks = max(_safe_float(result.get("max_marks"), 1.0), 1.0)
         percentage = _safe_float(result.get("percentage"), (total_marks / max_marks) * 100)
 
-        r1, r2, r3 = st.columns(3)
-        r1.metric("Score", f"{total_marks:.2f}/{max_marks:.2f}")
-        r2.metric("Percentage", f"{percentage:.1f}%")
-        r3.metric("Performance Band", _score_band(percentage))
-
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Score", f"{total_marks:.2f}/{max_marks:.2f}")
+        m2.metric("Percentage", f"{percentage:.1f}%")
+        m3.metric("Band", _score_band(percentage))
         st.progress(max(0.0, min(1.0, percentage / 100.0)))
 
         st.markdown("#### Feedback")
-        st.info(result.get("feedback", "No feedback provided."))
+        st.info(result.get("feedback", "No feedback returned."))
 
-        st.markdown("#### Mark Breakdown")
         points = result.get("question_marks", []) or []
+        st.markdown("#### Breakdown")
         if not points:
-            st.caption("Detailed marking points were not returned for this submission.")
+            st.caption("No detailed breakdown returned.")
         else:
-            for idx, item in enumerate(points, start=1):
-                point_title = item.get("point", f"Point {idx}")
-                awarded = _safe_float(item.get("awarded"), 0.0)
-                explanation = item.get("explanation", "No explanation provided")
-                with st.expander(f"{idx}. {point_title} ({awarded:.2f} marks)", expanded=(idx == 1)):
+            for idx, point in enumerate(points, start=1):
+                title = point.get("point", f"Point {idx}")
+                awarded = _safe_float(point.get("awarded"), 0.0)
+                explanation = point.get("explanation", "No explanation provided")
+                with st.expander(f"{idx}. {title} ({awarded:.2f} marks)", expanded=(idx == 1)):
                     st.write(explanation)
 
         prof = result.get("professional_marks", {}) or {}
         if prof:
-            st.markdown("#### Professional Skills")
+            st.markdown("#### Professional Marks")
             for skill, value in prof.items():
                 st.write(f"- **{str(skill).replace('_', ' ').title()}**: {_safe_float(value):.2f}")
 
         citations = result.get("citations", []) or []
         if citations:
-            with st.expander("References Used"):
+            with st.expander("References"):
                 for cite in citations:
                     st.write(f"- {cite}")
 
-        c1, c2 = st.columns(2)
-        with c1:
-            if st.button("Check Latest Upload Status", use_container_width=True, disabled=not st.session_state.last_upload_id):
-                try:
-                    payload = _refresh_job(api_client, st.session_state.last_upload_id, fetch_result=True)
-                    state = payload.get("status", "unknown")
-                    st.success(f"Latest upload status: {_status_copy(state)[0]}")
-                except Exception as exc:  # noqa: BLE001
-                    st.error(f"Could not refresh latest upload: {exc}")
-        with c2:
-            if st.button("Clear Current Result", use_container_width=True):
+        d1, d2 = st.columns(2)
+        with d1:
+            if st.button("Clear Result", use_container_width=True):
                 st.session_state.last_result = None
                 st.rerun()
-
-        if not CLIENT_MODE:
-            with st.expander("Raw Result JSON"):
-                st.code(json.dumps(result, indent=2), language="json")
-
+        with d2:
             st.download_button(
-                label="Download Result JSON",
+                label="Download JSON",
                 data=json.dumps(result, indent=2),
                 file_name=f"marking_result_{result.get('id', 'latest')}.json",
                 mime="application/json",
                 use_container_width=True,
             )
 
-if tab_operations is not None:
-    with tab_operations:
-        st.markdown("### Operations")
-        st.caption("Admin-only operational visibility")
+if admin_tab is not None:
+    with admin_tab:
+        st.markdown("### Admin")
+        st.caption("Technical diagnostics for operators.")
 
-        c1, c2 = st.columns(2)
-        with c1:
-            if st.button("Refresh Active Jobs", use_container_width=True, disabled=not st.session_state.jobs):
-                _refresh_active_jobs(api_client)
-                st.rerun()
-        with c2:
-            if st.button("Clear Job Queue", use_container_width=True, disabled=not st.session_state.jobs):
-                st.session_state.jobs = []
-                st.rerun()
+        if st.button("Run LLM Health Check", use_container_width=True, disabled=not backend_ok):
+            try:
+                st.session_state.llm_health = api_client.get_llm_health()
+            except Exception as exc:  # noqa: BLE001
+                st.session_state.llm_health = {"error": str(exc)}
 
+        if st.button("Run KB Stats Check", use_container_width=True, disabled=not backend_ok):
+            try:
+                st.session_state.kb_stats = api_client.get_knowledge_stats()
+            except Exception as exc:  # noqa: BLE001
+                st.session_state.kb_stats = {"error": str(exc)}
+
+        if st.session_state.llm_health:
+            st.markdown("#### LLM Health")
+            st.json(st.session_state.llm_health)
+
+        if st.session_state.kb_stats:
+            st.markdown("#### KB Stats")
+            st.json(st.session_state.kb_stats)
+
+        st.markdown("#### Job Queue")
         if not st.session_state.jobs:
             st.info("No jobs tracked in this session.")
         else:
             for job in st.session_state.jobs:
-                state = job.get("status", "unknown")
-                label, helper = _status_copy(state)
+                label, helper = _status_copy(job.get("status", "unknown"))
                 with st.container(border=True):
-                    top_1, top_2, top_3 = st.columns([2.2, 1.2, 1.0])
-                    top_1.markdown(f"**{job.get('filename', 'Uploaded File')}**")
-                    top_1.caption(f"Upload ID: `{job.get('upload_id', '-')}`")
-                    top_2.metric("Status", label)
-                    top_3.metric("Progress", f"{int(job.get('progress', 0) or 0)}%")
-                    st.caption(helper)
-
+                    c1, c2, c3 = st.columns([2.0, 1.0, 1.0])
+                    c1.write(job.get("filename", "uploaded"))
+                    c1.caption(f"Upload ID: `{job.get('upload_id', '-')}`")
+                    c2.metric("Status", label)
+                    c3.metric("Progress", f"{int(job.get('progress', 0) or 0)}%")
+                    if helper:
+                        st.caption(helper)
                     if job.get("error"):
                         st.error(str(job["error"]))
 
-                    op1, op2 = st.columns(2)
-                    with op1:
-                        if st.button("Refresh", key=f"ops_refresh_{job.get('upload_id')}", use_container_width=True):
-                            try:
-                                _refresh_job(api_client, job["upload_id"], fetch_result=True)
-                                st.rerun()
-                            except Exception as exc:  # noqa: BLE001
-                                _upsert_job({"upload_id": job["upload_id"], "status": "failed", "error": str(exc)})
-                                st.rerun()
-                    with op2:
-                        if st.button("Load Result", key=f"ops_load_{job.get('upload_id')}", use_container_width=True, disabled=not job.get("result_id")):
-                            try:
-                                result = api_client.get_result(job["result_id"])
-                                st.session_state.last_result = result
-                                st.session_state.last_run_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                                st.success("Result loaded into My Result tab.")
-                            except Exception as exc:  # noqa: BLE001
-                                st.error(f"Failed to load result: {exc}")
-
 st.divider()
-st.caption(f"Mode: {'Client' if CLIENT_MODE else 'Admin'} | Last update: {_fmt_iso(datetime.now().isoformat())}")
+st.caption(f"{APP_NAME} | {'Admin' if ADMIN_MODE else 'Client'} mode")

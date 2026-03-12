@@ -1,11 +1,10 @@
-"""Upload endpoints for handling file uploads and orchestration."""
+"""Upload endpoints for file and text submission orchestration."""
 
 from __future__ import annotations
 
 import asyncio
 import json
 import logging
-import os
 import shutil
 import threading
 import uuid
@@ -14,6 +13,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, UploadFile
+from pydantic import BaseModel, Field
 
 from backend.services.knowledge_base import KnowledgeBase
 from backend.services.marking_service import MarkingService
@@ -30,6 +30,14 @@ DATA_DIR = Path("data/uploads")
 UPLOADS_STORE_FILE = DATA_DIR / "uploads_store.json"
 RESULTS_STORE_FILE = DATA_DIR / "results_store.json"
 _STORE_LOCK = threading.Lock()
+
+
+class TextUploadRequest(BaseModel):
+    question_text: str = Field(..., min_length=5)
+    answer_text: str = Field(..., min_length=20)
+    paper: str = "AA"
+    question_number: Optional[str] = None
+    max_marks: Optional[float] = Field(default=None, gt=0, le=100)
 
 
 def _ensure_store_files() -> None:
@@ -78,11 +86,21 @@ def _to_float(value: Any) -> Optional[float]:
         return None
 
 
+def _clean_question_text(question_text: Optional[str]) -> Optional[str]:
+    if question_text is None:
+        return None
+    cleaned = " ".join(question_text.split()).strip()
+    return cleaned or None
+
+
 def _derive_marking_inputs(upload: Dict[str, Any], process_result: Dict[str, Any]) -> Dict[str, Any]:
     questions = process_result.get("questions") or []
     cleaned_answer = (process_result.get("cleaned_text") or "").strip()
 
-    if questions:
+    explicit_question = _clean_question_text(upload.get("question_text"))
+    if explicit_question:
+        question_text = explicit_question
+    elif questions:
         first = questions[0]
         header = str(first.get("header") or "").strip()
         body = str(first.get("text") or "").strip()
@@ -102,7 +120,8 @@ def _derive_marking_inputs(upload: Dict[str, Any], process_result: Dict[str, Any
     ]
     max_marks = sum(mark for mark in detected_marks if mark is not None and mark > 0)
     if max_marks <= 0:
-        max_marks = 16.0
+        requested = _to_float(upload.get("max_marks"))
+        max_marks = requested if requested and requested > 0 else 16.0
 
     return {
         "question_text": question_text,
@@ -141,6 +160,40 @@ def _fallback_mark_result(process_result: Dict[str, Any], max_marks: float, erro
     }
 
 
+def _build_result_payload(
+    result_id: str,
+    upload_id: str,
+    filename: str,
+    process_result: Dict[str, Any],
+    mark_result: Dict[str, Any],
+) -> Dict[str, Any]:
+    total_marks = float(mark_result.get("total_marks", 0.0))
+    max_marks = float(mark_result.get("max_marks", 16.0))
+    percentage = round((total_marks / max_marks) * 100, 2) if max_marks > 0 else 0.0
+
+    return {
+        "id": result_id,
+        "upload_id": upload_id,
+        "filename": filename,
+        "total_marks": total_marks,
+        "max_marks": max_marks,
+        "percentage": percentage,
+        "word_count": process_result.get("word_count", 0),
+        "question_count": process_result.get("question_count", 0),
+        "question_marks": mark_result.get("question_marks", []),
+        "professional_marks": mark_result.get("professional_marks", {}),
+        "feedback": mark_result.get(
+            "feedback",
+            f"Document processed successfully. Found {process_result.get('question_count', 0)} questions.",
+        ),
+        "citations": mark_result.get("citations", []),
+        "confidence_score": mark_result.get("confidence_score"),
+        "needs_review": mark_result.get("needs_review", False),
+        "model_used": mark_result.get("model_used", "unknown"),
+        "created_at": datetime.now().isoformat(),
+    }
+
+
 _ensure_store_files()
 uploads = _load_store(UPLOADS_STORE_FILE)
 results = _load_store(RESULTS_STORE_FILE)
@@ -152,6 +205,8 @@ async def upload_file(
     file: UploadFile = File(...),
     paper: str = Form(...),
     question_number: Optional[str] = Form(None),
+    question_text: Optional[str] = Form(None),
+    max_marks: Optional[float] = Form(None),
 ):
     """Upload a file for marking."""
     if not file.filename:
@@ -192,6 +247,8 @@ async def upload_file(
             "file_size": file_size,
             "paper": paper,
             "question_number": question_number,
+            "question_text": _clean_question_text(question_text),
+            "max_marks": max_marks,
             "status": "pending",
             "created_at": now,
             "updated_at": now,
@@ -206,6 +263,100 @@ async def upload_file(
         "size": file_size,
         "status": "pending",
         "message": "File uploaded successfully. Processing started.",
+    }
+
+
+@router.post("/api/v1/upload/text")
+async def upload_text_answer(payload: TextUploadRequest):
+    """Submit a typed answer directly from the app without file upload."""
+    question_text = _clean_question_text(payload.question_text)
+    if not question_text:
+        raise HTTPException(status_code=400, detail="question_text is required")
+
+    cleaned_answer = processing_service.processor.clean_text(payload.answer_text)
+    if len(cleaned_answer) < 20:
+        raise HTTPException(status_code=400, detail="answer_text is too short")
+
+    upload_id = str(uuid.uuid4())
+    now = datetime.now().isoformat()
+
+    with _STORE_LOCK:
+        uploads[upload_id] = {
+            "id": upload_id,
+            "filename": "typed_answer.txt",
+            "saved_filename": "typed_answer.txt",
+            "file_path": None,
+            "file_size": len(cleaned_answer),
+            "paper": payload.paper,
+            "question_number": payload.question_number,
+            "question_text": question_text,
+            "max_marks": payload.max_marks,
+            "status": "marking",
+            "created_at": now,
+            "updated_at": now,
+            "source": "typed",
+        }
+        _save_store(UPLOADS_STORE_FILE, uploads)
+
+    questions = processing_service.processor.detect_questions(cleaned_answer)
+    professional_marks = processing_service.processor.extract_professional_marks(cleaned_answer)
+    process_result = {
+        "word_count": len(cleaned_answer.split()),
+        "question_count": len(questions),
+        "professional_marks": professional_marks,
+    }
+
+    try:
+        answer_ingest = knowledge_base.ingest_student_answer(
+            answer_text=cleaned_answer,
+            metadata={
+                "paper": payload.paper,
+                "upload_id": upload_id,
+                "question_number": payload.question_number,
+                "source_file": "typed_answer.txt",
+                "question_text": question_text,
+            },
+        )
+        _set_upload_state(upload_id, "marking", student_answer_ingest=answer_ingest)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Student answer ingestion failed for %s: %s", upload_id, exc)
+
+    requested_max = float(payload.max_marks) if payload.max_marks else 16.0
+    try:
+        mark_result = await marking_service.mark_answer(
+            question_text=question_text,
+            student_answer=cleaned_answer,
+            max_marks=requested_max,
+            question_type=None,
+            paper_code=payload.paper,
+            context={
+                "upload_id": upload_id,
+                "question_number": payload.question_number,
+                "source": "typed",
+            },
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Engine marking failed for typed upload %s", upload_id)
+        mark_result = _fallback_mark_result(process_result, requested_max, str(exc))
+
+    result_id = str(uuid.uuid4())
+    result_payload = _build_result_payload(
+        result_id=result_id,
+        upload_id=upload_id,
+        filename="typed_answer.txt",
+        process_result=process_result,
+        mark_result=mark_result,
+    )
+
+    _persist_result(result_id, result_payload)
+    _set_upload_state(upload_id, "complete", result_id=result_id)
+
+    return {
+        "success": True,
+        "upload_id": upload_id,
+        "result_id": result_id,
+        "status": "complete",
+        "result": result_payload,
     }
 
 
@@ -234,6 +385,7 @@ async def get_status(upload_id: str):
         "result_id": upload.get("result_id"),
         "created_at": upload["created_at"],
         "updated_at": upload.get("updated_at", upload["created_at"]),
+        "error": upload.get("error"),
     }
 
 
@@ -272,6 +424,7 @@ def process_file_background(upload_id: str) -> None:
                     "upload_id": upload_id,
                     "question_number": upload.get("question_number"),
                     "source_file": upload.get("filename"),
+                    "question_text": upload.get("question_text"),
                 },
             )
             _set_upload_state(upload_id, "cleaning", student_answer_ingest=answer_ingest)
@@ -293,6 +446,7 @@ def process_file_background(upload_id: str) -> None:
                     context={
                         "upload_id": upload_id,
                         "question_number": upload.get("question_number"),
+                        "question_text": upload.get("question_text"),
                     },
                 )
             )
@@ -300,32 +454,14 @@ def process_file_background(upload_id: str) -> None:
             logger.exception("Engine marking failed for %s", upload_id)
             mark_result = _fallback_mark_result(process_result, mark_inputs["max_marks"], str(exc))
 
-        total_marks = float(mark_result.get("total_marks", 0.0))
-        max_marks = float(mark_result.get("max_marks", mark_inputs["max_marks"]))
-        percentage = round((total_marks / max_marks) * 100, 2) if max_marks > 0 else 0.0
-
         result_id = str(uuid.uuid4())
-        result_payload = {
-            "id": result_id,
-            "upload_id": upload_id,
-            "filename": upload["filename"],
-            "total_marks": total_marks,
-            "max_marks": max_marks,
-            "percentage": percentage,
-            "word_count": process_result.get("word_count", 0),
-            "question_count": process_result.get("question_count", 0),
-            "question_marks": mark_result.get("question_marks", []),
-            "professional_marks": mark_result.get("professional_marks", {}),
-            "feedback": mark_result.get(
-                "feedback",
-                f"Document processed successfully. Found {process_result.get('question_count', 0)} questions.",
-            ),
-            "citations": mark_result.get("citations", []),
-            "confidence_score": mark_result.get("confidence_score"),
-            "needs_review": mark_result.get("needs_review", False),
-            "model_used": mark_result.get("model_used", "unknown"),
-            "created_at": datetime.now().isoformat(),
-        }
+        result_payload = _build_result_payload(
+            result_id=result_id,
+            upload_id=upload_id,
+            filename=upload["filename"],
+            process_result=process_result,
+            mark_result=mark_result,
+        )
 
         _persist_result(result_id, result_payload)
         _set_upload_state(upload_id, "complete", result_id=result_id)

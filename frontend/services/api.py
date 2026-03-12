@@ -45,14 +45,69 @@ class APIClient:
         except requests.RequestException:
             return False
 
-    def upload_file(self, file, paper: str, question: Optional[str] = None) -> Dict[str, Any]:
+    def upload_file(
+        self,
+        file,
+        paper: str,
+        question: Optional[str] = None,
+        question_text: Optional[str] = None,
+        max_marks: Optional[float] = None,
+    ) -> Dict[str, Any]:
         """Upload a file for marking."""
         files = {"file": (file.name, file, getattr(file, "type", "application/octet-stream"))}
-        data = {"paper": paper}
+        data: Dict[str, Any] = {"paper": paper}
         if question:
             data["question_number"] = question
+        if question_text:
+            data["question_text"] = question_text
+        if max_marks is not None:
+            data["max_marks"] = str(max_marks)
 
-        return self._request("POST", "/api/v1/upload", files=files, data=data, timeout=30)
+        return self._request("POST", "/api/v1/upload", files=files, data=data, timeout=45)
+
+    def upload_text_answer(
+        self,
+        question_text: str,
+        answer_text: str,
+        paper: str = "AA",
+        question_number: Optional[str] = None,
+        max_marks: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        """Submit a typed answer directly from frontend."""
+        payload: Dict[str, Any] = {
+            "question_text": question_text,
+            "answer_text": answer_text,
+            "paper": paper,
+        }
+        if question_number:
+            payload["question_number"] = question_number
+        if max_marks is not None:
+            payload["max_marks"] = max_marks
+        return self._request("POST", "/api/v1/upload/text", json=payload, timeout=60)
+
+    def upload_tutor_guide(
+        self,
+        file,
+        doc_type: str,
+        paper: str = "AA",
+        year: Optional[str] = None,
+        question_type: Optional[str] = None,
+        notes: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Upload and ingest tutor guide documents."""
+        files = {"file": (file.name, file, getattr(file, "type", "application/octet-stream"))}
+        data: Dict[str, Any] = {
+            "doc_type": doc_type,
+            "paper": paper,
+        }
+        if year:
+            data["year"] = year
+        if question_type:
+            data["question_type"] = question_type
+        if notes:
+            data["notes"] = notes
+
+        return self._request("POST", "/api/v1/knowledge/upload-guide", files=files, data=data, timeout=120)
 
     def get_status(self, upload_id: str) -> Dict[str, Any]:
         """Get processing status."""
