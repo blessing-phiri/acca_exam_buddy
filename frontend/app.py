@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import streamlit as st
+import streamlit.components.v1 as components
 
 try:
     from frontend.services.api import APIClient
@@ -364,11 +365,9 @@ def _inject_theme_css(theme_mode: str, admin_mode: bool) -> None:
         [data-testid="stStatusWidget"],
         #MainMenu,
         footer,
-        header button[title="Deploy"],
-        header a[title="Deploy"] {
+        header [title="Deploy"] {
             visibility: hidden !important;
             display: none !important;
-            height: 0 !important;
         }
         """
 
@@ -385,18 +384,13 @@ def _inject_theme_css(theme_mode: str, admin_mode: bool) -> None:
                 --muted-text: {palette['muted']};
                 --border: {palette['border']};
                 --accent: {palette['accent']};
-                --accent-dark: {palette['accent_dark']};
                 --hero-bg: {palette['hero']};
-            }}
-
-            html, body, [class*="css"] {{
-                font-family: "Source Sans 3", sans-serif;
-                color: var(--text-color);
             }}
 
             .stApp {{
                 background: var(--app-bg);
                 color: var(--text-color);
+                font-family: "Source Sans 3", sans-serif;
             }}
 
             [data-testid="stSidebar"] {{
@@ -404,34 +398,19 @@ def _inject_theme_css(theme_mode: str, admin_mode: bool) -> None:
                 border-right: 1px solid var(--border);
             }}
 
-            [data-testid="stSidebar"] * {{
-                color: var(--text-color);
-            }}
-
             [data-testid="stMetric"],
-            [data-testid="stVerticalBlockBorderWrapper"] {{
+            [data-testid="stVerticalBlockBorderWrapper"],
+            [data-testid="stFileUploaderDropzone"] {{
                 background: var(--card-bg);
                 border: 1px solid var(--border);
                 border-radius: 12px;
             }}
 
-            [data-testid="stFileUploader"] section,
-            [data-testid="stFileUploaderDropzone"] {{
-                background: var(--card-bg);
-                border: 1px dashed var(--border);
-            }}
-
             div[data-baseweb="input"] > div,
             div[data-baseweb="textarea"] > div,
-            div[data-baseweb="select"] > div,
-            div[data-baseweb="popover"] {{
+            div[data-baseweb="select"] > div {{
                 background-color: var(--card-bg) !important;
                 border-color: var(--border) !important;
-                color: var(--text-color) !important;
-            }}
-
-            textarea, input {{
-                color: var(--text-color) !important;
             }}
 
             [data-testid="stTabs"] button {{
@@ -451,8 +430,7 @@ def _inject_theme_css(theme_mode: str, admin_mode: bool) -> None:
                 padding: 24px;
                 color: #f3fffd;
                 margin-bottom: 14px;
-                box-shadow: 0 10px 24px rgba(0, 0, 0, 0.24);
-                border: 1px solid rgba(255,255,255,0.14);
+                border: 1px solid rgba(255,255,255,0.16);
             }}
 
             .hero h1 {{
@@ -479,15 +457,43 @@ def _inject_theme_css(theme_mode: str, admin_mode: bool) -> None:
                 margin-bottom: 8px;
             }}
 
-            [data-testid="stDownloadButton"] button,
-            [data-testid="baseButton-primary"] {{
-                border-radius: 10px;
-            }}
-
             {hide_toolbar_css}
         </style>
         """,
         unsafe_allow_html=True,
+    )
+
+
+def _hide_streamlit_deploy_controls(admin_mode: bool) -> None:
+    if admin_mode:
+        return
+    # Extra guard in case Streamlit changes header markup.
+    components.html(
+        """
+        <script>
+            const hideDeploy = () => {
+                const selectors = [
+                    '[title="Deploy"]',
+                    'button[kind="header"]',
+                    '#MainMenu',
+                    '[data-testid="stToolbar"]'
+                ];
+                selectors.forEach((sel) => {
+                    document.querySelectorAll(sel).forEach((el) => {
+                        const t = (el.innerText || el.textContent || '').toLowerCase();
+                        if (sel.includes('Deploy') || t.includes('deploy') || sel === '#MainMenu' || sel.includes('stToolbar')) {
+                            el.style.display = 'none';
+                            el.style.visibility = 'hidden';
+                        }
+                    });
+                });
+            };
+            hideDeploy();
+            new MutationObserver(hideDeploy).observe(document.body, { childList: true, subtree: true });
+        </script>
+        """,
+        height=0,
+        width=0,
     )
 
 
@@ -532,6 +538,7 @@ with st.sidebar:
                 st.session_state.kb_stats = {"error": str(exc)}
 
 _inject_theme_css(selected_theme, ADMIN_MODE)
+_hide_streamlit_deploy_controls(ADMIN_MODE)
 
 st.markdown(
     f"""
