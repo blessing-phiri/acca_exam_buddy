@@ -6,6 +6,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import os
 from dotenv import load_dotenv
+from backend.api import upload
+
 
 # Load environment variables
 load_dotenv()
@@ -39,6 +41,7 @@ async def health_check():
     return {"status": "healthy"}
 
 # Import and include routers (we'll add these later)
+app.include_router(upload.router)
 # app.include_router(upload.router, prefix="/api/v1/upload", tags=["upload"])
 # app.include_router(mark.router, prefix="/api/v1/mark", tags=["mark"])
 
