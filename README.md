@@ -123,6 +123,7 @@ scripts/    Utility and ops scripts
 ### Marking Endpoints
 
 - `POST /api/v1/mark` - direct marking endpoint for testing/experiments
+- `GET /api/v1/mark/llm-health` - diagnose provider credentials/connectivity/model health
 - `POST /api/v1/mark/batch` - submit bulk marking jobs
 
 ### Knowledge Base Endpoints
@@ -177,6 +178,7 @@ Create `.env` with required secrets and connection values:
 
 ```bash
 DEEPSEEK_API_KEY=sk-xxx
+DEEPSEEK_MODEL=deepseek-chat
 MINIMAX_API_KEY=mmsk-xxx
 MINIMAX_GROUP_ID=123456
 DATABASE_URL=postgresql://postgres:password@localhost:5432/accamarker
@@ -277,6 +279,8 @@ pytest
 ## 15. License
 
 MIT
+
+
 
 
 

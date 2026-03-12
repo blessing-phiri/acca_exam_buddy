@@ -99,10 +99,54 @@ class MarkingService:
         self._update_stats(result)
         return result
 
+    async def get_llm_health(self) -> Dict[str, Any]:
+        """Check connectivity/configuration for active providers."""
+        checks = []
+        for role, provider in [("primary", self.primary_llm), ("fallback", self.fallback_llm)]:
+            if provider is None:
+                continue
+            checks.append(await self._provider_health(role, provider))
+
+        overall_ok = all(item.get("ok", False) for item in checks if item.get("role") == "primary")
+        return {
+            "overall_ok": overall_ok,
+            "providers": checks,
+            "active_model": self._active_model_name,
+            "timestamp": datetime.now().isoformat(),
+        }
+
+    async def _provider_health(self, role: str, provider: Any) -> Dict[str, Any]:
+        model_name = getattr(provider, "model_name", type(provider).__name__)
+        try:
+            if hasattr(provider, "health_check"):
+                payload = await provider.health_check()
+                return {"role": role, **payload}
+
+            _ = await provider.generate('Return JSON: {"ok": true}', max_tokens=32)
+            return {
+                "role": role,
+                "ok": True,
+                "provider": type(provider).__name__,
+                "model": model_name,
+            }
+        except Exception as exc:  # noqa: BLE001
+            return {
+                "role": role,
+                "ok": False,
+                "provider": type(provider).__name__,
+                "model": model_name,
+                "error": str(exc),
+            }
+
     def _configure_providers(self) -> Tuple[Any, Optional[Any]]:
         mode = os.getenv("MARKING_PROVIDER", "auto").strip().lower()
-        has_deepseek = bool(os.getenv("DEEPSEEK_API_KEY", "").strip())
-        has_minimax = bool(os.getenv("MINIMAX_API_KEY", "").strip() and os.getenv("MINIMAX_GROUP_ID", "").strip())
+
+        deepseek_key = os.getenv("DEEPSEEK_API_KEY", "")
+        minimax_key = os.getenv("MINIMAX_API_KEY", "")
+        minimax_group = os.getenv("MINIMAX_GROUP_ID", "")
+
+        has_deepseek = self._has_real_config(deepseek_key)
+        has_minimax = self._has_real_config(minimax_key) and self._has_real_config(minimax_group)
 
         primary: Any
         fallback: Optional[Any] = None
@@ -121,7 +165,7 @@ class MarkingService:
             primary = MiniMaxProvider()
         else:
             primary = MockProvider()
-            logger.warning("No LLM API credentials configured; using MockProvider")
+            logger.warning("No valid LLM credentials configured; using MockProvider")
 
         if isinstance(primary, DeepSeekProvider) and has_minimax:
             fallback = MiniMaxProvider()
@@ -129,6 +173,23 @@ class MarkingService:
             fallback = MockProvider()
 
         return primary, fallback
+
+    def _has_real_config(self, value: Optional[str]) -> bool:
+        if value is None:
+            return False
+        lowered = value.strip().lower()
+        if not lowered:
+            return False
+        placeholders = {
+            "your-group-id",
+            "your-key",
+            "your-api-key",
+            "sk-your-key-here",
+            "mmsk-your-key-here",
+            "replace-me",
+            "changeme",
+        }
+        return lowered not in placeholders
 
     def _normalize_question_type(self, explicit_type: Optional[str], question_text: str) -> QuestionType:
         if explicit_type:

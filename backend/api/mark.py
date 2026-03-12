@@ -73,9 +73,21 @@ async def mark_answer(request: MarkRequest):
         result["created_at"] = datetime.now().isoformat()
         result["percentage"] = round((result["total_marks"] / request.max_marks) * 100, 2)
         return result
+    except RuntimeError as exc:
+        # LLM/provider failures should be surfaced as 503 with actionable detail.
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     except Exception as exc:  # noqa: BLE001
         logger.exception("Single mark request failed")
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.get("/llm-health")
+async def llm_health() -> Dict[str, Any]:
+    """Provider health probe for keys/connectivity/model availability."""
+    payload = await marking_service.get_llm_health()
+    if payload.get("overall_ok"):
+        return payload
+    raise HTTPException(status_code=503, detail=payload)
 
 
 @router.post("/batch", response_model=BatchMarkResponse)

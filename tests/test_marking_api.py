@@ -36,6 +36,15 @@ def test_mark_endpoint_schema() -> None:
     assert isinstance(data["citations"], list)
 
 
+def test_llm_health_endpoint_mock_ok() -> None:
+    client = _get_client()
+    response = client.get("/api/v1/mark/llm-health")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["overall_ok"] is True
+    assert isinstance(payload["providers"], list)
+
+
 def test_batch_endpoint_and_status() -> None:
     client = _get_client()
     payload = {
