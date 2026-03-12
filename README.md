@@ -127,18 +127,18 @@ scripts/    Utility and ops scripts
 
 ### Knowledge Base Endpoints
 
-- POST /api/v1/knowledge/ingest/local - ingest local files into marking/examiner/technical collections
-- POST /api/v1/knowledge/ingest/web - crawl and ingest technical article pages from an index URL
-- POST /api/v1/knowledge/ingest/student-answer - store student answers for consistency retrieval
-- GET /api/v1/knowledge/search - semantic/hybrid retrieval over collections
-- GET /api/v1/knowledge/documents - list ingested document registry records
-- GET /api/v1/knowledge/documents/{document_id} - retrieve a registry record
-- PATCH /api/v1/knowledge/documents/{document_id} - update registry metadata
-- DELETE /api/v1/knowledge/documents/{document_id} - delete registry record and vectors
-- POST /api/v1/knowledge/scrape/run - scrape ACCA resources, download PDFs, auto-ingest
-- GET /api/v1/knowledge/scrape/manual-fallback - list items requiring manual download/login access
-- POST /api/v1/knowledge/scrape/manual-fallback/{item_id}/resolve - mark fallback item resolved (+ optional ingest)
-- GET /api/v1/knowledge/stats - knowledge base collection and ingestion stats
+- `POST /api/v1/knowledge/ingest/local` - ingest local files into marking/examiner/technical collections
+- `POST /api/v1/knowledge/ingest/web` - crawl and ingest technical article pages from an index URL
+- `POST /api/v1/knowledge/ingest/student-answer` - store student answers for consistency retrieval
+- `GET /api/v1/knowledge/search` - semantic/hybrid retrieval over collections
+- `GET /api/v1/knowledge/documents` - list ingested document registry records
+- `GET /api/v1/knowledge/documents/{document_id}` - retrieve a registry record
+- `PATCH /api/v1/knowledge/documents/{document_id}` - update registry metadata
+- `DELETE /api/v1/knowledge/documents/{document_id}` - delete registry record and vectors
+- `POST /api/v1/knowledge/scrape/run` - scrape ACCA resources, download PDFs, auto-ingest
+- `GET /api/v1/knowledge/scrape/manual-fallback` - list items requiring manual download/login access
+- `POST /api/v1/knowledge/scrape/manual-fallback/{item_id}/resolve` - mark fallback item resolved (+ optional ingest)
+- `GET /api/v1/knowledge/stats` - knowledge base collection and ingestion stats
 
 ## 8. Data Model Overview
 

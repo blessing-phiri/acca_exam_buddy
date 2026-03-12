@@ -1,37 +1,39 @@
-"""
-Marking API Endpoints
-"""
+"""Marking API endpoints."""
 
-from fastapi import APIRouter, HTTPException, BackgroundTasks
-from pydantic import BaseModel, Field
-from typing import Optional, List, Dict
-from datetime import datetime
+from __future__ import annotations
+
+import logging
 import uuid
+from datetime import datetime
+from typing import Any, Dict, List, Optional
+
+from fastapi import APIRouter, BackgroundTasks, HTTPException
+from pydantic import BaseModel, Field
 
 from backend.services.marking_service import MarkingService
-from backend.services.processing_service import ProcessingService
 
 router = APIRouter(prefix="/api/v1/mark", tags=["marking"])
+logger = logging.getLogger(__name__)
 
-# Initialize services
 marking_service = MarkingService()
-processing_service = ProcessingService()
+batch_jobs: Dict[str, Dict[str, Any]] = {}
 
-# Request/Response models
+
 class MarkRequest(BaseModel):
     question_text: str
     student_answer: str
     max_marks: float = Field(..., gt=0, le=30)
     question_type: Optional[str] = None
     paper_code: str = "AA"
-    context: Optional[Dict] = None
+    context: Optional[Dict[str, Any]] = None
+
 
 class MarkResponse(BaseModel):
     id: str
     total_marks: float
     max_marks: float
     percentage: float
-    question_marks: List[Dict]
+    question_marks: List[Dict[str, Any]]
     professional_marks: Dict[str, float]
     feedback: str
     citations: List[str]
@@ -41,9 +43,11 @@ class MarkResponse(BaseModel):
     model_used: str
     created_at: str
 
+
 class BatchMarkRequest(BaseModel):
-    answers: List[Dict]  # Each with question_text, student_answer, max_marks
+    answers: List[Dict[str, Any]]
     paper_code: str = "AA"
+
 
 class BatchMarkResponse(BaseModel):
     batch_id: str
@@ -51,10 +55,10 @@ class BatchMarkResponse(BaseModel):
     total_answers: int
     estimated_time_seconds: int
 
+
 @router.post("/", response_model=MarkResponse)
 async def mark_answer(request: MarkRequest):
-    """Mark a single answer"""
-    
+    """Mark a single answer."""
     try:
         result = await marking_service.mark_answer(
             question_text=request.question_text,
@@ -62,62 +66,72 @@ async def mark_answer(request: MarkRequest):
             max_marks=request.max_marks,
             question_type=request.question_type,
             paper_code=request.paper_code,
-            context=request.context
+            context=request.context,
         )
-        
-        # Add metadata
+
         result["id"] = str(uuid.uuid4())
         result["created_at"] = datetime.now().isoformat()
-        result["percentage"] = (result["total_marks"] / request.max_marks) * 100
-        
+        result["percentage"] = round((result["total_marks"] / request.max_marks) * 100, 2)
         return result
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Single mark request failed")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
 
 @router.post("/batch", response_model=BatchMarkResponse)
 async def mark_batch(request: BatchMarkRequest, background_tasks: BackgroundTasks):
-    """Start batch marking job"""
-    
+    """Queue a batch marking job."""
+    if not request.answers:
+        raise HTTPException(status_code=400, detail="answers list cannot be empty")
+
+    for index, answer in enumerate(request.answers):
+        if not all(key in answer for key in ["question_text", "student_answer", "max_marks"]):
+            raise HTTPException(status_code=400, detail=f"answer at index {index} missing required fields")
+
     batch_id = str(uuid.uuid4())
-    
-    # Store batch info (in real implementation, use database)
-    batch_info = {
+    batch_info: Dict[str, Any] = {
         "id": batch_id,
         "status": "pending",
         "answers": request.answers,
         "paper_code": request.paper_code,
         "created_at": datetime.now().isoformat(),
-        "results": []
+        "progress": 0,
+        "completed": 0,
+        "total": len(request.answers),
+        "results": [],
     }
-    
-    # Start processing in background
-    background_tasks.add_task(process_batch, batch_id, batch_info)
-    
+    batch_jobs[batch_id] = batch_info
+
+    background_tasks.add_task(process_batch, batch_id)
+
     return BatchMarkResponse(
         batch_id=batch_id,
         status="pending",
         total_answers=len(request.answers),
-        estimated_time_seconds=len(request.answers) * 30  # Rough estimate
+        estimated_time_seconds=len(request.answers) * 20,
     )
+
 
 @router.get("/batch/{batch_id}")
 async def get_batch_status(batch_id: str):
-    """Get batch marking status"""
-    
-    # In real implementation, retrieve from database
-    # This is a placeholder
+    """Get batch marking status."""
+    batch = batch_jobs.get(batch_id)
+    if not batch:
+        raise HTTPException(status_code=404, detail="Batch not found")
+
     return {
         "batch_id": batch_id,
-        "status": "processing",
-        "progress": 50,
-        "completed": 5,
-        "total": 10
+        "status": batch.get("status", "unknown"),
+        "progress": batch.get("progress", 0),
+        "completed": batch.get("completed", 0),
+        "total": batch.get("total", 0),
+        "results": batch.get("results", []),
     }
+
 
 @router.get("/types")
 async def get_question_types():
-    """Get supported question types"""
+    """Get supported question types."""
     return {
         "types": [
             {"id": "audit_risk", "name": "Audit Risk", "description": "Identify and explain audit risks"},
@@ -125,49 +139,56 @@ async def get_question_types():
             {"id": "substantive_procedures", "name": "Substantive Procedures", "description": "Describe audit procedures"},
             {"id": "internal_control", "name": "Internal Control", "description": "Identify control deficiencies"},
             {"id": "audit_report", "name": "Audit Report", "description": "Determine audit opinion"},
-            {"id": "going_concern", "name": "Going Concern", "description": "Evaluate going concern issues"}
+            {"id": "going_concern", "name": "Going Concern", "description": "Evaluate going concern issues"},
         ]
     }
 
+
 @router.get("/stats")
 async def get_marking_stats():
-    """Get marking statistics"""
+    """Get aggregated marking statistics."""
     return marking_service.get_stats()
 
-async def process_batch(batch_id: str, batch_info: Dict):
-    """Process batch marking in background"""
-    
-    # Update status
-    batch_info["status"] = "processing"
-    
-    results = []
-    for i, answer in enumerate(batch_info["answers"]):
+
+async def process_batch(batch_id: str) -> None:
+    """Process a queued batch marking job."""
+    batch = batch_jobs.get(batch_id)
+    if not batch:
+        return
+
+    answers = batch.get("answers", [])
+    if not answers:
+        batch["status"] = "failed"
+        batch["completed_at"] = datetime.now().isoformat()
+        return
+
+    batch["status"] = "processing"
+
+    results: List[Dict[str, Any]] = []
+    for index, answer in enumerate(answers):
         try:
+            max_marks = float(answer["max_marks"])
             result = await marking_service.mark_answer(
-                question_text=answer["question_text"],
-                student_answer=answer["student_answer"],
-                max_marks=answer["max_marks"],
-                paper_code=batch_info["paper_code"]
+                question_text=str(answer["question_text"]),
+                student_answer=str(answer["student_answer"]),
+                max_marks=max_marks,
+                question_type=answer.get("question_type"),
+                paper_code=batch.get("paper_code", "AA"),
+                context=answer.get("context"),
             )
-            
+
             result["id"] = str(uuid.uuid4())
             result["created_at"] = datetime.now().isoformat()
-            result["percentage"] = (result["total_marks"] / answer["max_marks"]) * 100
-            
+            result["percentage"] = round((result["total_marks"] / max_marks) * 100, 2)
             results.append(result)
-            
-        except Exception as e:
-            results.append({
-                "error": str(e),
-                "answer_index": i
-            })
-        
-        # Update progress (in real implementation, store in database)
-        batch_info["progress"] = (i + 1) / len(batch_info["answers"]) * 100
-    
-    batch_info["status"] = "completed"
-    batch_info["results"] = results
-    batch_info["completed_at"] = datetime.now().isoformat()
-    
-    # In real implementation, save to database
-    logger.info(f"Batch {batch_id} completed with {len(results)} results")
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Batch answer failed index=%s", index)
+            results.append({"error": str(exc), "answer_index": index})
+
+        batch["completed"] = index + 1
+        batch["progress"] = round(((index + 1) / len(answers)) * 100, 2)
+
+    batch["status"] = "completed"
+    batch["results"] = results
+    batch["completed_at"] = datetime.now().isoformat()
+    logger.info("Batch %s completed with %s results", batch_id, len(results))

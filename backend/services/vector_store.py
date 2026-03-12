@@ -1,5 +1,4 @@
-"""
-Vector store service.
+"""Vector store service.
 Handles ChromaDB operations for ingestion and retrieval.
 """
 
@@ -19,12 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 class HashEmbeddingFunction:
-    """
-    Local deterministic embedding fallback.
-
-    This is not semantically rich like transformer embeddings, but it is stable,
-    fast, and avoids external dependencies so ingestion/search remain operational.
-    """
+    """Local deterministic embedding fallback."""
 
     def __init__(self, dimension: int = 256) -> None:
         self.dimension = dimension
@@ -172,10 +166,11 @@ class VectorStore:
 
         collection = self.collections[collection_name]
         query_embedding = self.embedding_function([query])[0]
+        where_filter = self._normalize_filter_dict(filter_dict)
         results = collection.query(
             query_embeddings=[query_embedding],
             n_results=n_results,
-            where=filter_dict,
+            where=where_filter,
         )
 
         documents = results.get("documents") or [[]]
@@ -234,7 +229,8 @@ class VectorStore:
             raise ValueError(f"Collection {collection_name} not found")
 
         collection = self.collections[collection_name]
-        return collection.get(ids=document_ids, where=filter_dict, limit=limit, offset=offset)
+        where_filter = self._normalize_filter_dict(filter_dict)
+        return collection.get(ids=document_ids, where=where_filter, limit=limit, offset=offset)
 
     def delete_document(self, collection_name: str, document_id: str) -> None:
         self.delete_documents(collection_name, [document_id])
@@ -280,3 +276,18 @@ class VectorStore:
             else:
                 sanitized[key] = str(value)
         return sanitized
+
+    def _normalize_filter_dict(self, filter_dict: Optional[Dict]) -> Optional[Dict]:
+        """Normalize multi-field filters for Chroma versions that require explicit operators."""
+        if not filter_dict:
+            return None
+
+        normalized_items = [(key, value) for key, value in filter_dict.items() if value is not None and value != ""]
+        if not normalized_items:
+            return None
+
+        if len(normalized_items) == 1:
+            key, value = normalized_items[0]
+            return {key: value}
+
+        return {"$and": [{key: value} for key, value in normalized_items]}
