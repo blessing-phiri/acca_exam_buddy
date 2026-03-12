@@ -1,14 +1,41 @@
-﻿"""
-API service for frontend-backend communication
-"""
+"""API service for frontend-backend communication."""
 
-from typing import Optional, Dict, Any
+from __future__ import annotations
+
+from typing import Any, Dict, Optional
+
 import requests
 
 
 class APIClient:
     def __init__(self, base_url: str = "http://localhost:8000"):
         self.base_url = base_url.rstrip("/")
+
+    def _request(self, method: str, path: str, **kwargs: Any) -> Dict[str, Any]:
+        url = f"{self.base_url}{path}"
+        try:
+            response = requests.request(method=method, url=url, **kwargs)
+        except requests.RequestException as exc:
+            raise RuntimeError(f"Network request failed: {exc}") from exc
+
+        if response.ok:
+            if not response.text:
+                return {}
+            return response.json()
+
+        detail = None
+        try:
+            payload = response.json()
+            detail = payload.get("detail")
+        except Exception:  # noqa: BLE001
+            detail = response.text
+
+        if isinstance(detail, dict):
+            message = detail.get("error") or detail.get("message") or str(detail)
+        else:
+            message = str(detail) if detail else f"HTTP {response.status_code}"
+
+        raise RuntimeError(f"API error ({response.status_code}): {message}")
 
     def health_check(self) -> bool:
         """Check if backend is healthy."""
@@ -18,31 +45,112 @@ class APIClient:
         except requests.RequestException:
             return False
 
-    def upload_file(self, file, paper: str, question: Optional[str] = None) -> Dict[str, Any]:
+    def upload_file(
+        self,
+        file,
+        paper: str,
+        question: Optional[str] = None,
+        question_text: Optional[str] = None,
+        max_marks: Optional[float] = None,
+        student_name: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """Upload a file for marking."""
-        url = f"{self.base_url}/api/v1/upload"
-        files = {"file": (file.name, file, file.type)}
-        data = {"paper": paper}
+        files = {"file": (file.name, file, getattr(file, "type", "application/octet-stream"))}
+        data: Dict[str, Any] = {"paper": paper}
         if question:
             data["question_number"] = question
+        if question_text:
+            data["question_text"] = question_text
+        if max_marks is not None:
+            data["max_marks"] = str(max_marks)
+        if student_name:
+            data["student_name"] = student_name
 
-        response = requests.post(url, files=files, data=data, timeout=30)
-        response.raise_for_status()
-        return response.json()
+        return self._request("POST", "/api/v1/upload", files=files, data=data, timeout=45)
+
+    def upload_text_answer(
+        self,
+        question_text: str,
+        answer_text: str,
+        paper: str = "AA",
+        question_number: Optional[str] = None,
+        max_marks: Optional[float] = None,
+        student_name: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Submit a typed answer directly from frontend."""
+        payload: Dict[str, Any] = {
+            "question_text": question_text,
+            "answer_text": answer_text,
+            "paper": paper,
+        }
+        if question_number:
+            payload["question_number"] = question_number
+        if max_marks is not None:
+            payload["max_marks"] = max_marks
+        if student_name:
+            payload["student_name"] = student_name
+        return self._request("POST", "/api/v1/upload/text", json=payload, timeout=60)
+
+    def upload_tutor_guide(
+        self,
+        file,
+        doc_type: str,
+        paper: str = "AA",
+        year: Optional[str] = None,
+        question_type: Optional[str] = None,
+        notes: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Upload and ingest tutor guide documents."""
+        files = {"file": (file.name, file, getattr(file, "type", "application/octet-stream"))}
+        data: Dict[str, Any] = {
+            "doc_type": doc_type,
+            "paper": paper,
+        }
+        if year:
+            data["year"] = year
+        if question_type:
+            data["question_type"] = question_type
+        if notes:
+            data["notes"] = notes
+
+        return self._request("POST", "/api/v1/knowledge/upload-guide", files=files, data=data, timeout=120)
 
     def get_status(self, upload_id: str) -> Dict[str, Any]:
         """Get processing status."""
-        url = f"{self.base_url}/api/v1/status/{upload_id}"
-        response = requests.get(url, timeout=15)
-        response.raise_for_status()
-        return response.json()
+        return self._request("GET", f"/api/v1/status/{upload_id}", timeout=15)
 
     def get_result(self, result_id: str) -> Dict[str, Any]:
         """Get marking result."""
-        url = f"{self.base_url}/api/v1/result/{result_id}"
-        response = requests.get(url, timeout=30)
-        response.raise_for_status()
-        return response.json()
+        return self._request("GET", f"/api/v1/result/{result_id}", timeout=30)
+
+    def get_marking_types(self) -> Dict[str, Any]:
+        """Get supported marking question types."""
+        return self._request("GET", "/api/v1/mark/types", timeout=15)
+
+    def get_llm_health(self) -> Dict[str, Any]:
+        """Get LLM provider health diagnostics."""
+        return self._request("GET", "/api/v1/mark/llm-health", timeout=40)
+
+    def get_knowledge_stats(self) -> Dict[str, Any]:
+        """Get knowledge base stats."""
+        return self._request("GET", "/api/v1/knowledge/stats", timeout=20)
+
+    def trigger_scrape(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Trigger ACCA resource scraping and ingestion."""
+        return self._request("POST", "/api/v1/knowledge/scrape/run", json=payload, timeout=120)
+
+    def list_knowledge_documents(
+        self,
+        collection: Optional[str] = None,
+        document_type: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """List knowledge base document registry entries."""
+        params: Dict[str, Any] = {}
+        if collection:
+            params["collection"] = collection
+        if document_type:
+            params["document_type"] = document_type
+        return self._request("GET", "/api/v1/knowledge/documents", params=params, timeout=20)
 
 
 # Default client used by the app; no UI side effects here.

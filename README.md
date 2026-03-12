@@ -123,13 +123,22 @@ scripts/    Utility and ops scripts
 ### Marking Endpoints
 
 - `POST /api/v1/mark` - direct marking endpoint for testing/experiments
+- `GET /api/v1/mark/llm-health` - diagnose provider credentials/connectivity/model health
 - `POST /api/v1/mark/batch` - submit bulk marking jobs
 
 ### Knowledge Base Endpoints
 
 - `POST /api/v1/knowledge/ingest/local` - ingest local files into marking/examiner/technical collections
-- `POST /api/v1/knowledge/ingest/web` - crawl and ingest technical articles from a website index page
-- `GET /api/v1/knowledge/search` - semantic retrieval over knowledge base
+- `POST /api/v1/knowledge/ingest/web` - crawl and ingest technical article pages from an index URL
+- `POST /api/v1/knowledge/ingest/student-answer` - store student answers for consistency retrieval
+- `GET /api/v1/knowledge/search` - semantic/hybrid retrieval over collections
+- `GET /api/v1/knowledge/documents` - list ingested document registry records
+- `GET /api/v1/knowledge/documents/{document_id}` - retrieve a registry record
+- `PATCH /api/v1/knowledge/documents/{document_id}` - update registry metadata
+- `DELETE /api/v1/knowledge/documents/{document_id}` - delete registry record and vectors
+- `POST /api/v1/knowledge/scrape/run` - scrape ACCA resources, download PDFs, auto-ingest
+- `GET /api/v1/knowledge/scrape/manual-fallback` - list items requiring manual download/login access
+- `POST /api/v1/knowledge/scrape/manual-fallback/{item_id}/resolve` - mark fallback item resolved (+ optional ingest)
 - `GET /api/v1/knowledge/stats` - knowledge base collection and ingestion stats
 
 ## 8. Data Model Overview
@@ -169,6 +178,7 @@ Create `.env` with required secrets and connection values:
 
 ```bash
 DEEPSEEK_API_KEY=sk-xxx
+DEEPSEEK_MODEL=deepseek-chat
 MINIMAX_API_KEY=mmsk-xxx
 MINIMAX_GROUP_ID=123456
 DATABASE_URL=postgresql://postgres:password@localhost:5432/accamarker
@@ -192,7 +202,7 @@ Run RAG ingestion:
 
 ```bash
 python scripts/ingest_knowledge.py --dir data/raw --paper AA
-python scripts/ingest_knowledge.py --include-web --max-web-articles 20
+python scripts/ingest_knowledge.py --scrape --scrape-max-pages 30 --scrape-max-pdfs 100
 python scripts/ingest_knowledge.py --stats
 ```
 
@@ -269,5 +279,10 @@ pytest
 ## 15. License
 
 MIT
+
+
+
+
+
 
 

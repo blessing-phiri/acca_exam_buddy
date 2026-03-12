@@ -17,6 +17,7 @@ from dotenv import load_dotenv
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from backend.services.knowledge_base import KnowledgeBase
+from backend.services.resource_scraper import ResourceScraper
 
 
 load_dotenv()
@@ -49,20 +50,12 @@ def list_files(directory: Path, extensions: Iterable[str]) -> List[Path]:
     return sorted(path for path in directory.rglob("*") if path.is_file() and path.suffix.lower() in allowed)
 
 
-def ingest_all(
-    kb: KnowledgeBase,
-    data_dir: str = "data/raw",
-    paper: str = "AA",
-    include_web: bool = False,
-    web_index_url: str = "https://www.accaglobal.com/gb/en/student/exam-support-resources/fundamentals-exams-study-resources/f8/technical-articles.html",
-    max_web_articles: int = 15,
-) -> Dict:
+def ingest_all(kb: KnowledgeBase, data_dir: str = "data/raw", paper: str = "AA") -> Dict:
     base = Path(data_dir)
     stats = {
         "marking_schemes": 0,
         "examiner_reports": 0,
         "technical_local": 0,
-        "technical_web": 0,
         "total_chunks": 0,
         "errors": [],
     }
@@ -71,66 +64,43 @@ def ingest_all(
     print(f"Marking schemes found: {len(marking_files)}")
     for file_path in marking_files:
         metadata = parse_filename_metadata(file_path, "marking_scheme", paper)
-        print(f"  Ingesting marking scheme: {file_path.name}")
         result = kb.ingest_marking_scheme(str(file_path), metadata)
         if result.get("success"):
             stats["marking_schemes"] += 1
             stats["total_chunks"] += int(result.get("chunk_count", 0))
-            print(f"    OK - {result.get('chunk_count', 0)} chunks")
+            print(f"  OK marking scheme: {file_path.name} ({result.get('chunk_count', 0)} chunks)")
         else:
             error = f"{file_path.name}: {result.get('error', 'Unknown error')}"
             stats["errors"].append(error)
-            print(f"    FAIL - {result.get('error')}")
+            print(f"  FAIL marking scheme: {error}")
 
     examiner_files = list_files(base / "examiner_reports", {".pdf", ".docx"})
     print(f"Examiner reports found: {len(examiner_files)}")
     for file_path in examiner_files:
         metadata = parse_filename_metadata(file_path, "examiner_report", paper)
-        print(f"  Ingesting examiner report: {file_path.name}")
         result = kb.ingest_examiner_report(str(file_path), metadata)
         if result.get("success"):
             stats["examiner_reports"] += 1
             stats["total_chunks"] += int(result.get("chunk_count", 0))
-            print(f"    OK - {result.get('chunk_count', 0)} chunks")
+            print(f"  OK examiner report: {file_path.name} ({result.get('chunk_count', 0)} chunks)")
         else:
             error = f"{file_path.name}: {result.get('error', 'Unknown error')}"
             stats["errors"].append(error)
-            print(f"    FAIL - {result.get('error')}")
+            print(f"  FAIL examiner report: {error}")
 
     technical_files = list_files(base / "technical", SUPPORTED_DOC_EXTENSIONS)
     print(f"Local technical files found: {len(technical_files)}")
     for file_path in technical_files:
         metadata = parse_filename_metadata(file_path, "technical_article", paper)
-        print(f"  Ingesting technical file: {file_path.name}")
         result = kb.ingest_technical_document(str(file_path), metadata)
         if result.get("success"):
             stats["technical_local"] += 1
             stats["total_chunks"] += int(result.get("chunk_count", 0))
-            print(f"    OK - {result.get('chunk_count', 0)} chunks")
+            print(f"  OK technical file: {file_path.name} ({result.get('chunk_count', 0)} chunks)")
         else:
             error = f"{file_path.name}: {result.get('error', 'Unknown error')}"
             stats["errors"].append(error)
-            print(f"    FAIL - {result.get('error')}")
-
-    if include_web:
-        print(f"Crawling technical web index: {web_index_url}")
-        result = kb.ingest_technical_articles_from_index(
-            index_url=web_index_url,
-            metadata={"paper": paper, "source_type": "website"},
-            max_articles=max_web_articles,
-        )
-        if result.get("success"):
-            stats["technical_web"] += int(result.get("ingested", 0))
-            stats["total_chunks"] += int(result.get("total_chunks", 0))
-            for web_error in result.get("errors", []):
-                stats["errors"].append(f"{web_error.get('url')}: {web_error.get('error')}")
-            print(
-                f"  Web ingest summary - discovered: {result.get('discovered', 0)}, "
-                f"ingested: {result.get('ingested', 0)}, failed: {result.get('failed', 0)}"
-            )
-        else:
-            stats["errors"].append(f"web_index: {result.get('error')}")
-            print(f"  FAIL - {result.get('error')}")
+            print(f"  FAIL technical file: {error}")
 
     return stats
 
@@ -147,11 +117,11 @@ def test_retrieval(kb: KnowledgeBase) -> None:
     ]
 
     for query in queries:
-        print(f"\nQuery: {query}")
         marking = kb.retrieve_marking_rules(query, n_results=2)
         technical = kb.retrieve_technical_references(query, n_results=2)
         examiner = kb.retrieve_examiner_guidance(query, n_results=1)
 
+        print(f"\nQuery: {query}")
         print(f"  Marking rules: {len(marking)}")
         print(f"  Technical references: {len(technical)}")
         print(f"  Examiner guidance: {len(examiner)}")
@@ -163,14 +133,18 @@ def main() -> None:
     parser.add_argument("--paper", type=str, default="AA", help="Default paper code")
     parser.add_argument("--stats", action="store_true", help="Show knowledge base statistics")
     parser.add_argument("--test", action="store_true", help="Run retrieval tests")
-    parser.add_argument("--include-web", action="store_true", help="Ingest technical articles from ACCA web index")
+
+    parser.add_argument("--scrape", action="store_true", help="Crawl ACCA website, download PDFs, and auto-ingest")
     parser.add_argument(
-        "--web-index-url",
+        "--scrape-url",
         type=str,
         default="https://www.accaglobal.com/gb/en/student/exam-support-resources/fundamentals-exams-study-resources/f8/technical-articles.html",
-        help="Technical article index URL",
+        help="Start URL for ACCA scraping",
     )
-    parser.add_argument("--max-web-articles", type=int, default=15, help="Max web articles to ingest")
+    parser.add_argument("--scrape-max-pages", type=int, default=30, help="Maximum pages to crawl")
+    parser.add_argument("--scrape-max-pdfs", type=int, default=100, help="Maximum PDFs to download")
+    parser.add_argument("--scrape-delay", type=float, default=1.0, help="Delay between requests (seconds)")
+    parser.add_argument("--scrape-no-auto-ingest", action="store_true", help="Only download resources, do not ingest")
 
     args = parser.parse_args()
 
@@ -180,35 +154,48 @@ def main() -> None:
     kb = KnowledgeBase()
 
     if args.stats:
-        summary = kb.get_knowledge_summary()
-        print(summary)
+        print(kb.get_knowledge_summary())
         return
 
     if args.test:
         test_retrieval(kb)
         return
 
-    stats = ingest_all(
-        kb=kb,
-        data_dir=args.dir,
-        paper=args.paper,
-        include_web=args.include_web,
-        web_index_url=args.web_index_url,
-        max_web_articles=args.max_web_articles,
-    )
+    local_stats = ingest_all(kb=kb, data_dir=args.dir, paper=args.paper)
+
+    scrape_result = None
+    if args.scrape:
+        scraper = ResourceScraper(kb=kb, request_delay_seconds=args.scrape_delay)
+        scrape_result = scraper.run(
+            start_url=args.scrape_url,
+            paper=args.paper,
+            auto_ingest=not args.scrape_no_auto_ingest,
+            max_pages=args.scrape_max_pages,
+            max_pdf_downloads=args.scrape_max_pdfs,
+            include_html_articles=True,
+        )
 
     print("\nIngestion complete")
     print("=" * 50)
-    print(f"Marking schemes ingested: {stats['marking_schemes']}")
-    print(f"Examiner reports ingested: {stats['examiner_reports']}")
-    print(f"Technical local ingested: {stats['technical_local']}")
-    print(f"Technical web ingested: {stats['technical_web']}")
-    print(f"Total chunks stored: {stats['total_chunks']}")
+    print(f"Marking schemes ingested: {local_stats['marking_schemes']}")
+    print(f"Examiner reports ingested: {local_stats['examiner_reports']}")
+    print(f"Technical local ingested: {local_stats['technical_local']}")
+    print(f"Total local chunks stored: {local_stats['total_chunks']}")
 
-    if stats["errors"]:
-        print(f"\nErrors ({len(stats['errors'])}):")
-        for error in stats["errors"]:
+    if local_stats["errors"]:
+        print(f"\nLocal ingestion errors ({len(local_stats['errors'])}):")
+        for error in local_stats["errors"]:
             print(f"  - {error}")
+
+    if scrape_result:
+        print("\nScrape summary")
+        print("-" * 50)
+        print(f"Visited pages: {scrape_result['visited_pages']}")
+        print(f"PDF links found: {scrape_result['pdf_links_found']}")
+        print(f"PDFs downloaded: {scrape_result['pdfs_downloaded']}")
+        print(f"HTML technical articles found: {scrape_result['html_articles_found']}")
+        print(f"Auto-ingested items: {scrape_result['ingested_items']}")
+        print(f"Errors: {scrape_result['errors_count']}")
 
     print("\nKnowledge base summary:")
     print(kb.get_knowledge_summary())
