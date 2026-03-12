@@ -1,57 +1,45 @@
 """
-Quick test to verify all components are working
+Quick test to verify setup.
 Run with: python test_setup.py
 """
 
-import sys
+from __future__ import annotations
+
 import os
+import sys
 from pathlib import Path
 
-print("🔍 Testing ACCA Exam Buddy Setup...\n")
+print("Testing ACCA Exam Buddy Setup...\n")
+print(f"Python: {sys.version.split()[0]} OK")
 
-# Test Python version
-print(f"Python: {sys.version.split()[0]} ✓")
 
-# Test imports
-try:
-    import fastapi
-    print(f"FastAPI: {fastapi.__version__} ✓")
-except ImportError:
-    print("❌ FastAPI not installed")
+def check_import(module_name: str, label: str) -> None:
+    try:
+        module = __import__(module_name)
+        version = getattr(module, "__version__", "unknown")
+        print(f"{label}: {version} OK")
+    except ImportError:
+        print(f"MISSING: {label}")
 
-try:
-    import streamlit
-    print(f"Streamlit: {streamlit.__version__} ✓")
-except ImportError:
-    print("❌ Streamlit not installed")
 
-try:
-    import chromadb
-    print(f"ChromaDB: {chromadb.__version__} ✓")
-except ImportError:
-    print("❌ ChromaDB not installed")
+check_import("fastapi", "FastAPI")
+check_import("streamlit", "Streamlit")
+check_import("chromadb", "ChromaDB")
+check_import("PyPDF2", "PyPDF2")
+check_import("docx", "python-docx")
 
-try:
-    import PyPDF2
-    print(f"PyPDF2: {PyPDF2.__version__} ✓")
-except ImportError:
-    print("❌ PyPDF2 not installed")
-
-# Test environment
 from dotenv import load_dotenv
-load_dotenv()
 
+load_dotenv()
 api_key = os.getenv("DEEPSEEK_API_KEY")
 if api_key and api_key != "sk-your-key-here":
-    print(f"DeepSeek API key: ✓ (starts with {api_key[:5]}...)")
+    print(f"DeepSeek API key: OK (starts with {api_key[:5]}...)")
 else:
-    print("⚠️  DeepSeek API key not set in .env")
+    print("WARNING: DeepSeek API key not set in .env")
 
-# Test paths
-venv_path = Path("./venv")
-if venv_path.exists():
-    print("Virtual environment: ✓")
+if Path("./venv").exists():
+    print("Virtual environment: OK")
 else:
-    print("❌ Virtual environment not found")
+    print("MISSING: Virtual environment not found")
 
-print("\n✅ Setup verification complete!")
+print("\nSetup verification complete.")
