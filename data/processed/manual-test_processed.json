@@ -1,0 +1,286 @@
+{
+  "upload_id": "manual-test",
+  "original_file": "data/uploads/58bd9ae1-1f06-4657-99a5-af0adde4658f_MyCV.docx",
+  "doc_hash": "84eac53de8eb3e784bd15e31b933401f",
+  "extraction": {
+    "success": true,
+    "file_type": "docx",
+    "paragraphs": 51,
+    "text": "BLESSING PHIRI\nCloud & DevOps Engineer | Kubernetes & OpenShift | Azure Cloud | High Availability\nblessingphiri79@gmail.com| https://github.com/blessing-bester| https://www.linkedin.com/in/blessingphiri/\nPROFESSIONAL SUMMARY\nWith 4+ years of experience, I design and operate HA infrastructure on Azure, Kubernetes, and OpenShift, implement monitoring and alerting pipelines, enforce RBAC and operational best practices, and improve deployment reliability.\nI help companies operate reliable, scalable, and secure cloud and Kubernetes platforms, reducing production incidents, automating deployments, and modernizing legacy systems.\nCORE SKILLS\nKubernetes & OpenShift (production clusters, AKS)\nHelm & Kustomize (Kubernetes deployment workflows)\nAzure Cloud (Resource Manager, App Service, Storage, AKS, VMs, Networking)\nLinux Systems & Networking\nHigh Availability & Resilient Architecture\nCI/CD pipelines (GitHub Actions, Azure DevOps concepts)\nPowerShell & Scripting (Bash, Azure CLI)\nInfrastructure as Code (Terraform, Ansible)\nMonitoring & Observability (Azure Monitor, Prometheus, Grafana, custom metrics)\nSecurity & RBAC best practices\nCloud Architecture Principles (Scalability, Reliability, Performance, Cost Optimization)\nStakeholder Communication & Solution Design\nAgile / SCRUM & On-call Operational Support\nPROFESSIONAL EXPERIENCE\nInfrastructure / DevOps Engineer\nAdvanced Communication Systems | Nov 2023- Dec 2025\nOwned and operated hybrid cloud Kubernetes platforms (Azure & on-prem OpenShift), ensuring availability, scalability, and secure operations.\nBuilt and maintained monitoring and alerting pipelines, including custom metrics, enabling proactive detection and faster incident resolution.\nActed as an escalation point for complex production incidents, performing root cause analysis and driving long-term corrective and preventive actions.\nPartnered with application and QA teams to support CI/CD pipelines using GitHub Actions; aligned with Azure DevOps and Kubernetes-native delivery models, reducing manual operational effort and improving release reliability.\nManaged Azure workloads including VMs, Storage, App Service, AKS, and networking, contributing to solution design and architecture discussions.\nImplemented security best practices and RBAC controls across production clusters, improving operational compliance and access management.\nInfrastructure / Linux Admin\nAdvanced Communication Systems | Nov 2021- Nov 2023\nAdministered and supported Linux-based production systems, maintaining high uptime for customer-facing applications.\nPerformed system health checks, performance tuning, and capacity planning, proactively identifying and resolving bottlenecks.\nTroubleshot complex issues across Linux systems, containers, networking, and distributed services in production environments.\nInvestigated and resolved system incidents, escalating complex issues and contributing to root cause analysis.\nCollaborated with senior engineers to implement operational improvements and basic automation.\nKEY PROJECTS\nLegacy PBX Modernization (Vicidial \u2192 OpenShift)\nMigrated a monolithic PBX system to a highly available OpenShift platform using Kubernetes, KubeVirt, and Ceph.\nDesigned for fault tolerance, scalability, and reliability across compute, storage, and network layers.\nSupported Helm/Kustomize deployments and CI/CD integration for smoother operations.\nContributed to architectural discussions optimizing cost, performance, and operational efficiency.\nImproved system resilience and operational stability during peak usage periods.\nEDUCATION\nBachelor\u2019s Degree in Accounting\nChinhoyi University of Technology | 2019 - 2024\nProfessional Certifications\nThe Linux Foundation- CKA, CKAD, KCNA, KCSA\nRed Hat \u2013 RHCSA, RHCE, Container Specialist, OpenShift Administrator, OpenShift Virtualization\nHashi Corp- Terraform Associate\nMicrosoft- Microsoft Azure Associate Administrator",
+    "paragraphs_detail": [
+      {
+        "para_num": 1,
+        "text": "BLESSING PHIRI",
+        "style": "Unknown"
+      },
+      {
+        "para_num": 2,
+        "text": "Cloud & DevOps Engineer | Kubernetes & OpenShift | Azure Cloud | High Availability",
+        "style": "Unknown"
+      },
+      {
+        "para_num": 3,
+        "text": "blessingphiri79@gmail.com| https://github.com/blessing-bester| https://www.linkedin.com/in/blessingphiri/",
+        "style": "Unknown"
+      },
+      {
+        "para_num": 5,
+        "text": "PROFESSIONAL SUMMARY",
+        "style": "Unknown"
+      },
+      {
+        "para_num": 6,
+        "text": "With 4+ years of experience, I design and operate HA infrastructure on Azure, Kubernetes, and OpenShift, implement monitoring and alerting pipelines, enforce RBAC and operational best practices, and improve deployment reliability.",
+        "style": "Unknown"
+      },
+      {
+        "para_num": 7,
+        "text": "I help companies operate reliable, scalable, and secure cloud and Kubernetes platforms, reducing production incidents, automating deployments, and modernizing legacy systems.",
+        "style": "Unknown"
+      },
+      {
+        "para_num": 9,
+        "text": "CORE SKILLS",
+        "style": "Unknown"
+      },
+      {
+        "para_num": 10,
+        "text": "Kubernetes & OpenShift (production clusters, AKS)",
+        "style": "Unknown"
+      },
+      {
+        "para_num": 11,
+        "text": "Helm & Kustomize (Kubernetes deployment workflows)",
+        "style": "Unknown"
+      },
+      {
+        "para_num": 12,
+        "text": "Azure Cloud (Resource Manager, App Service, Storage, AKS, VMs, Networking)",
+        "style": "Unknown"
+      },
+      {
+        "para_num": 13,
+        "text": "Linux Systems & Networking",
+        "style": "Unknown"
+      },
+      {
+        "para_num": 14,
+        "text": "High Availability & Resilient Architecture",
+        "style": "Unknown"
+      },
+      {
+        "para_num": 15,
+        "text": "CI/CD pipelines (GitHub Actions, Azure DevOps concepts)",
+        "style": "Unknown"
+      },
+      {
+        "para_num": 16,
+        "text": "PowerShell & Scripting (Bash, Azure CLI)",
+        "style": "Unknown"
+      },
+      {
+        "para_num": 17,
+        "text": "Infrastructure as Code (Terraform, Ansible)",
+        "style": "Unknown"
+      },
+      {
+        "para_num": 18,
+        "text": "Monitoring & Observability (Azure Monitor, Prometheus, Grafana, custom metrics)",
+        "style": "Unknown"
+      },
+      {
+        "para_num": 19,
+        "text": "Security & RBAC best practices",
+        "style": "Unknown"
+      },
+      {
+        "para_num": 20,
+        "text": "Cloud Architecture Principles (Scalability, Reliability, Performance, Cost Optimization)",
+        "style": "Unknown"
+      },
+      {
+        "para_num": 21,
+        "text": "Stakeholder Communication & Solution Design",
+        "style": "Unknown"
+      },
+      {
+        "para_num": 22,
+        "text": "Agile / SCRUM & On-call Operational Support",
+        "style": "Unknown"
+      },
+      {
+        "para_num": 24,
+        "text": "PROFESSIONAL EXPERIENCE",
+        "style": "Unknown"
+      },
+      {
+        "para_num": 25,
+        "text": "Infrastructure / DevOps Engineer",
+        "style": "Unknown"
+      },
+      {
+        "para_num": 26,
+        "text": "Advanced Communication Systems | Nov 2023- Dec 2025",
+        "style": "Unknown"
+      },
+      {
+        "para_num": 27,
+        "text": "Owned and operated hybrid cloud Kubernetes platforms (Azure & on-prem OpenShift), ensuring availability, scalability, and secure operations.",
+        "style": "Unknown"
+      },
+      {
+        "para_num": 28,
+        "text": "Built and maintained monitoring and alerting pipelines, including custom metrics, enabling proactive detection and faster incident resolution.",
+        "style": "Unknown"
+      },
+      {
+        "para_num": 29,
+        "text": "Acted as an escalation point for complex production incidents, performing root cause analysis and driving long-term corrective and preventive actions.",
+        "style": "Unknown"
+      },
+      {
+        "para_num": 30,
+        "text": "Partnered with application and QA teams to support CI/CD pipelines using GitHub Actions; aligned with Azure DevOps and Kubernetes-native delivery models, reducing manual operational effort and improving release reliability.",
+        "style": "Unknown"
+      },
+      {
+        "para_num": 31,
+        "text": "Managed Azure workloads including VMs, Storage, App Service, AKS, and networking, contributing to solution design and architecture discussions.",
+        "style": "Unknown"
+      },
+      {
+        "para_num": 32,
+        "text": "Implemented security best practices and RBAC controls across production clusters, improving operational compliance and access management.",
+        "style": "Unknown"
+      },
+      {
+        "para_num": 34,
+        "text": "Infrastructure / Linux Admin",
+        "style": "Unknown"
+      },
+      {
+        "para_num": 35,
+        "text": "Advanced Communication Systems | Nov 2021- Nov 2023",
+        "style": "Unknown"
+      },
+      {
+        "para_num": 36,
+        "text": "Administered and supported Linux-based production systems, maintaining high uptime for customer-facing applications.",
+        "style": "Unknown"
+      },
+      {
+        "para_num": 37,
+        "text": "Performed system health checks, performance tuning, and capacity planning, proactively identifying and resolving bottlenecks.",
+        "style": "Unknown"
+      },
+      {
+        "para_num": 38,
+        "text": "Troubleshot complex issues across Linux systems, containers, networking, and distributed services in production environments.",
+        "style": "Unknown"
+      },
+      {
+        "para_num": 39,
+        "text": "Investigated and resolved system incidents, escalating complex issues and contributing to root cause analysis.",
+        "style": "Unknown"
+      },
+      {
+        "para_num": 40,
+        "text": "Collaborated with senior engineers to implement operational improvements and basic automation.",
+        "style": "Unknown"
+      },
+      {
+        "para_num": 42,
+        "text": "KEY PROJECTS",
+        "style": "Unknown"
+      },
+      {
+        "para_num": 43,
+        "text": "Legacy PBX Modernization (Vicidial \u2192 OpenShift)",
+        "style": "Unknown"
+      },
+      {
+        "para_num": 44,
+        "text": "Migrated a monolithic PBX system to a highly available OpenShift platform using Kubernetes, KubeVirt, and Ceph.",
+        "style": "Unknown"
+      },
+      {
+        "para_num": 45,
+        "text": "Designed for fault tolerance, scalability, and reliability across compute, storage, and network layers.",
+        "style": "Unknown"
+      },
+      {
+        "para_num": 46,
+        "text": "Supported Helm/Kustomize deployments and CI/CD integration for smoother operations.",
+        "style": "Unknown"
+      },
+      {
+        "para_num": 47,
+        "text": "Contributed to architectural discussions optimizing cost, performance, and operational efficiency.",
+        "style": "Unknown"
+      },
+      {
+        "para_num": 48,
+        "text": "Improved system resilience and operational stability during peak usage periods.",
+        "style": "Unknown"
+      },
+      {
+        "para_num": 50,
+        "text": "EDUCATION",
+        "style": "Unknown"
+      },
+      {
+        "para_num": 51,
+        "text": "Bachelor\u2019s Degree in Accounting",
+        "style": "Unknown"
+      },
+      {
+        "para_num": 52,
+        "text": "Chinhoyi University of Technology | 2019 - 2024",
+        "style": "Unknown"
+      },
+      {
+        "para_num": 54,
+        "text": "Professional Certifications",
+        "style": "Unknown"
+      },
+      {
+        "para_num": 55,
+        "text": "The Linux Foundation- CKA, CKAD, KCNA, KCSA",
+        "style": "Unknown"
+      },
+      {
+        "para_num": 56,
+        "text": "Red Hat \u2013 RHCSA, RHCE, Container Specialist, OpenShift Administrator, OpenShift Virtualization",
+        "style": "Unknown"
+      },
+      {
+        "para_num": 57,
+        "text": "Hashi Corp- Terraform Associate",
+        "style": "Unknown"
+      },
+      {
+        "para_num": 59,
+        "text": "Microsoft- Microsoft Azure Associate Administrator",
+        "style": "Unknown"
+      }
+    ],
+    "tables": [],
+    "metadata": {
+      "parser": "xml-fallback",
+      "core_properties": {}
+    }
+  },
+  "cleaned_text": "BLESSING PHIRI Cloud & DevOps Engineer | Kubernetes & OpenShift | Azure Cloud | High Availability blessingphiri79@gmail.com| https://github.com/blessing-bester| https://www.linkedin.com/in/blessingphiri/ PROFESSIONAL SUMMARY With 4+ years of experience, I design and operate HA infrastructure on Azure, Kubernetes, and OpenShift, implement monitoring and alerting pipelines, enforce RBAC and operational best practices, and improve deployment reliability.\nI help companies operate reliable, scalable, and secure cloud and Kubernetes platforms, reducing production incidents, automating deployments, and modernizing legacy systems.\nCORE SKILLS Kubernetes & OpenShift (production clusters, AKS) Helm & Kustomize (Kubernetes deployment workflows) Azure Cloud (Resource Manager, App Service, Storage, AKS, VMs, Networking) Linux Systems & Networking High Availability & Resilient Architecture CI/CD pipelines (GitHub Actions, Azure DevOps concepts) PowerShell & Scripting (Bash, Azure CLI) Infrastructure as Code (Terraform, Ansible) Monitoring & Observability (Azure Monitor, Prometheus, Grafana, custom metrics) Security & RBAC best practices Cloud Architecture Principles (Scalability, Reliability, Performance, Cost Optimization) Stakeholder Communication & Solution Design Agile / SCRUM & On-call Operational Support PROFESSIONAL EXPERIENCE Infrastructure / DevOps Engineer Advanced Communication Systems | Nov 2023- Dec 2025 Owned and operated hybrid cloud Kubernetes platforms (Azure & on-prem OpenShift), ensuring availability, scalability, and secure operations.\nBuilt and maintained monitoring and alerting pipelines, including custom metrics, enabling proactive detection and faster incident resolution.\nActed as an escalation point for complex production incidents, performing root cause analysis and driving long-term corrective and preventive actions.\nPartnered with application and QA teams to support CI/CD pipelines using GitHub Actions; aligned with Azure DevOps and Kubernetes-native delivery models, reducing manual operational effort and improving release reliability.\nManaged Azure workloads including VMs, Storage, App Service, AKS, and networking, contributing to solution design and architecture discussions.\nImplemented security best practices and RBAC controls across production clusters, improving operational compliance and access management.\nInfrastructure / Linux Admin Advanced Communication Systems | Nov 2021- Nov 2023 Administered and supported Linux-based production systems, maintaining high uptime for customer-facing applications.\nPerformed system health checks, performance tuning, and capacity planning, proactively identifying and resolving bottlenecks.\nTroubleshot complex issues across Linux systems, containers, networking, and distributed services in production environments.\nInvestigated and resolved system incidents, escalating complex issues and contributing to root cause analysis.\nCollaborated with senior engineers to implement operational improvements and basic automation.\nKEY PROJECTS Legacy PBX Modernization (Vicidial \u2192 OpenShift) Migrated a monolithic PBX system to a highly available OpenShift platform using Kubernetes, KubeVirt, and Ceph.\nDesigned for fault tolerance, scalability, and reliability across compute, storage, and network layers.\nSupported Helm/Kustomize deployments and CI/CD integration for smoother operations.\nContributed to architectural discussions optimizing cost, performance, and operational efficiency.\nImproved system resilience and operational stability during peak usage periods.\nEDUCATION Bachelor\u2019s Degree in Accounting Chinhoyi University of Technology | 2019 - 2024 Professional Certifications The Linux Foundation- CKA, CKAD, KCNA, KCSA Red Hat \u2013 RHCSA, RHCE, Container Specialist, OpenShift Administrator, OpenShift Virtualization Hashi Corp- Terraform Associate Microsoft- Microsoft Azure Associate Administrator",
+  "questions": [],
+  "metadata": {
+    "file_type": "docx",
+    "has_tables": false,
+    "has_bullets": false,
+    "has_numbers": false,
+    "possible_paper": null,
+    "possible_year": "2023"
+  },
+  "word_count": 474,
+  "char_count": 3903,
+  "processed_at": "2026-03-12T10:55:50.050305"
+}

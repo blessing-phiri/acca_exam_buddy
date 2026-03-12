@@ -1,4 +1,4 @@
-﻿# ACCA AA AI Marker
+# ACCA AA AI Marker
 
 AI-powered marking assistant for ACCA AA (Audit and Assurance) exam answers. The system grades uploaded student responses against official marking schemes and examiner guidance, returning marks, rationale, citations, and improvement feedback.
 
@@ -127,8 +127,10 @@ scripts/    Utility and ops scripts
 
 ### Knowledge Base Endpoints
 
-- `POST /api/v1/knowledge/ingest` - ingest marking scheme/guidance files
+- `POST /api/v1/knowledge/ingest/local` - ingest local files into marking/examiner/technical collections
+- `POST /api/v1/knowledge/ingest/web` - crawl and ingest technical articles from a website index page
 - `GET /api/v1/knowledge/search` - semantic retrieval over knowledge base
+- `GET /api/v1/knowledge/stats` - knowledge base collection and ingestion stats
 
 ## 8. Data Model Overview
 
@@ -176,6 +178,7 @@ MINIO_ACCESS_KEY=minioadmin
 MINIO_SECRET_KEY=minioadmin
 LOG_LEVEL=INFO
 ENVIRONMENT=development
+EMBEDDING_PROVIDER=auto  # auto|openai|google|default|hash
 ```
 
 Run services:
@@ -183,6 +186,14 @@ Run services:
 ```bash
 uvicorn backend.main:app --reload
 streamlit run frontend/app.py
+```
+
+Run RAG ingestion:
+
+```bash
+python scripts/ingest_knowledge.py --dir data/raw --paper AA
+python scripts/ingest_knowledge.py --include-web --max-web-articles 20
+python scripts/ingest_knowledge.py --stats
 ```
 
 ## 10. Development Roadmap
@@ -258,4 +269,5 @@ pytest
 ## 15. License
 
 MIT
+
 
