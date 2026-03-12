@@ -1,4 +1,4 @@
-﻿"""
+"""
 API service for frontend-backend communication
 """
 
@@ -44,6 +44,32 @@ class APIClient:
         response.raise_for_status()
         return response.json()
 
+    def get_knowledge_stats(self) -> Dict[str, Any]:
+        """Get knowledge base stats."""
+        url = f"{self.base_url}/api/v1/knowledge/stats"
+        response = requests.get(url, timeout=20)
+        response.raise_for_status()
+        return response.json()
+
+    def trigger_scrape(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Trigger ACCA resource scraping and ingestion."""
+        url = f"{self.base_url}/api/v1/knowledge/scrape/run"
+        response = requests.post(url, json=payload, timeout=120)
+        response.raise_for_status()
+        return response.json()
+
+    def list_knowledge_documents(self, collection: Optional[str] = None, document_type: Optional[str] = None) -> Dict[str, Any]:
+        """List knowledge base document registry entries."""
+        url = f"{self.base_url}/api/v1/knowledge/documents"
+        params: Dict[str, Any] = {}
+        if collection:
+            params["collection"] = collection
+        if document_type:
+            params["document_type"] = document_type
+        response = requests.get(url, params=params, timeout=20)
+        response.raise_for_status()
+        return response.json()
 
 # Default client used by the app; no UI side effects here.
 api_client = APIClient()
+

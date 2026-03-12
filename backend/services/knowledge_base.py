@@ -1,6 +1,6 @@
 """
 Knowledge base service.
-Handles ingestion and retrieval of ACCA knowledge documents.
+Handles ingestion, retrieval, and document registry CRUD.
 """
 
 from __future__ import annotations
@@ -10,10 +10,12 @@ import json
 import logging
 import os
 import re
+import threading
+import uuid
 from datetime import datetime
 from html.parser import HTMLParser
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urljoin, urlparse
 
 import requests
@@ -66,13 +68,11 @@ class ArticleTextExtractor(HTMLParser):
         self._parts: List[str] = []
 
     def handle_starttag(self, tag: str, attrs) -> None:
-        tag_lower = tag.lower()
-        if tag_lower in {"script", "style", "noscript"}:
-            self._skip_stack.append(tag_lower)
+        if tag.lower() in {"script", "style", "noscript"}:
+            self._skip_stack.append(tag.lower())
 
     def handle_endtag(self, tag: str) -> None:
-        tag_lower = tag.lower()
-        if self._skip_stack and self._skip_stack[-1] == tag_lower:
+        if self._skip_stack and self._skip_stack[-1] == tag.lower():
             self._skip_stack.pop()
 
     def handle_data(self, data: str) -> None:
@@ -88,7 +88,7 @@ class ArticleTextExtractor(HTMLParser):
 
 
 class TitleExtractor(HTMLParser):
-    """Extract the document title from HTML."""
+    """Extract title from HTML pages."""
 
     def __init__(self) -> None:
         super().__init__()
@@ -123,6 +123,15 @@ class KnowledgeBase:
         self.data_dir = "data/knowledge"
         os.makedirs(self.data_dir, exist_ok=True)
 
+        self.registry_file = os.path.join(self.data_dir, "documents_registry.json")
+        self.manual_fallback_file = os.path.join(self.data_dir, "manual_fallback_queue.json")
+        self.scrape_runs_dir = os.path.join(self.data_dir, "scrape_runs")
+        os.makedirs(self.scrape_runs_dir, exist_ok=True)
+
+        self._registry_lock = threading.Lock()
+        self._ensure_json_file(self.registry_file, {"documents": []})
+        self._ensure_json_file(self.manual_fallback_file, {"items": []})
+
         self.valid_papers = ["AA", "AAA", "F8"]
         self.question_types = [
             "audit_risk",
@@ -140,15 +149,26 @@ class KnowledgeBase:
         if not process_result.get("success", False):
             return {"success": False, "error": process_result.get("error", "Processing failed")}
 
-        text = process_result.get("text", "")
-        chunks = self._chunk_marking_scheme(text, metadata)
+        chunks = self._chunk_marking_scheme(process_result.get("text", ""), metadata)
+        if not chunks:
+            return {"success": False, "error": "No chunks generated for marking scheme"}
+
         ids = self.vector_store.add_document_chunks(
             collection_name="marking_schemes",
             chunks=[chunk["text"] for chunk in chunks],
             metadatas=[chunk["metadata"] for chunk in chunks],
         )
 
+        document_id = self._register_document(
+            collection="marking_schemes",
+            document_type="marking_scheme",
+            source=file_path,
+            metadata=metadata,
+            chunk_ids=ids,
+        )
+
         record_file = self._save_ingestion_record(
+            document_id=document_id,
             source=file_path,
             collection="marking_schemes",
             metadata=metadata,
@@ -158,6 +178,7 @@ class KnowledgeBase:
 
         return {
             "success": True,
+            "document_id": document_id,
             "collection": "marking_schemes",
             "chunk_count": len(chunks),
             "ids": ids,
@@ -187,13 +208,25 @@ class KnowledgeBase:
                 }
             )
 
+        if not chunks:
+            return {"success": False, "error": "No chunks generated for examiner report"}
+
         ids = self.vector_store.add_document_chunks(
             collection_name="examiner_reports",
             chunks=[chunk["text"] for chunk in chunks],
             metadatas=[chunk["metadata"] for chunk in chunks],
         )
 
+        document_id = self._register_document(
+            collection="examiner_reports",
+            document_type="examiner_report",
+            source=file_path,
+            metadata=metadata,
+            chunk_ids=ids,
+        )
+
         record_file = self._save_ingestion_record(
+            document_id=document_id,
             source=file_path,
             collection="examiner_reports",
             metadata=metadata,
@@ -203,6 +236,7 @@ class KnowledgeBase:
 
         return {
             "success": True,
+            "document_id": document_id,
             "collection": "examiner_reports",
             "chunk_count": len(chunks),
             "ids": ids,
@@ -240,7 +274,7 @@ class KnowledgeBase:
         return self._ingest_technical_text(raw_text=raw_text, base_metadata=base_metadata)
 
     def ingest_technical_article_from_url(self, url: str, metadata: Optional[Dict] = None, timeout: int = 30) -> Dict:
-        """Fetch and ingest a technical article from a website URL."""
+        """Fetch and ingest a technical article from a public website URL."""
         logger.info("Ingesting technical article URL: %s", url)
 
         try:
@@ -254,6 +288,9 @@ class KnowledgeBase:
             )
             response.raise_for_status()
         except Exception as exc:  # noqa: BLE001
+            status_hint = str(exc)
+            if "403" in status_hint or "401" in status_hint:
+                self.add_manual_fallback(url=url, reason="Access denied or login required", context={"source": "web_ingest"})
             return {"success": False, "error": f"Failed to fetch URL {url}: {exc}"}
 
         html = response.text
@@ -273,13 +310,11 @@ class KnowledgeBase:
         index_url: str,
         metadata: Optional[Dict] = None,
         max_articles: int = 20,
+        request_delay_seconds: float = 1.0,
     ) -> Dict:
-        """
-        Crawl a technical-articles index page and ingest each article page.
-
-        Returns ingestion summary with successes/failures per URL.
-        """
+        """Crawl a technical-articles index page and ingest article pages."""
         logger.info("Discovering technical article links from index: %s", index_url)
+
         try:
             response = requests.get(
                 index_url,
@@ -303,7 +338,12 @@ class KnowledgeBase:
         errors: List[Dict] = []
         results: List[Dict] = []
 
-        for url in links:
+        for index, url in enumerate(links):
+            if request_delay_seconds > 0 and index > 0:
+                import time
+
+                time.sleep(request_delay_seconds)
+
             result = self.ingest_technical_article_from_url(url, metadata=metadata)
             results.append({"url": url, "result": result})
 
@@ -323,6 +363,53 @@ class KnowledgeBase:
             "total_chunks": total_chunks,
             "errors": errors,
             "results": results,
+        }
+
+    def ingest_student_answer(self, answer_text: str, metadata: Dict) -> Dict:
+        """Ingest a student answer into student_answers collection."""
+        cleaned = self.processor.clean_text(answer_text)
+        if len(cleaned) < 40:
+            return {"success": False, "error": "Student answer text is too short to ingest"}
+
+        chunks = self._chunk_text_for_rag(cleaned, max_chars=1000, overlap_chars=120)
+        if not chunks:
+            return {"success": False, "error": "No student answer chunks generated"}
+
+        payload: List[Dict] = []
+        for index, chunk in enumerate(chunks):
+            payload.append(
+                {
+                    "text": chunk,
+                    "metadata": {
+                        **metadata,
+                        "type": "student_answer",
+                        "chunk_type": "student_answer",
+                        "chunk_index": index,
+                        "chunk_total": len(chunks),
+                    },
+                }
+            )
+
+        ids = self.vector_store.add_document_chunks(
+            collection_name="student_answers",
+            chunks=[item["text"] for item in payload],
+            metadatas=[item["metadata"] for item in payload],
+        )
+
+        document_id = self._register_document(
+            collection="student_answers",
+            document_type="student_answer",
+            source=metadata.get("source_file") or metadata.get("upload_id") or "student_answer",
+            metadata=metadata,
+            chunk_ids=ids,
+        )
+
+        return {
+            "success": True,
+            "document_id": document_id,
+            "collection": "student_answers",
+            "chunk_count": len(chunks),
+            "ids": ids,
         }
 
     def retrieve_marking_rules(
@@ -362,12 +449,7 @@ class KnowledgeBase:
             filter_dict=filter_dict,
         )
 
-    def retrieve_technical_references(
-        self,
-        query: str,
-        paper: str = "AA",
-        n_results: int = 5,
-    ) -> List[Dict]:
+    def retrieve_technical_references(self, query: str, paper: str = "AA", n_results: int = 5) -> List[Dict]:
         filter_dict = {"paper": paper} if paper else None
         keywords = extract_keywords(query)
         return self.vector_store.hybrid_search(
@@ -378,17 +460,237 @@ class KnowledgeBase:
             filter_dict=filter_dict,
         )
 
+    def retrieve_similar_student_answers(self, query: str, n_results: int = 5) -> List[Dict]:
+        return self.vector_store.search(
+            collection_name="student_answers",
+            query=query,
+            n_results=n_results,
+            filter_dict=None,
+        )
+
+    def list_documents(
+        self,
+        collection: Optional[str] = None,
+        document_type: Optional[str] = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> Dict:
+        with self._registry_lock:
+            registry = self._load_json(self.registry_file)
+
+        documents = registry.get("documents", [])
+        if collection:
+            documents = [doc for doc in documents if doc.get("collection") == collection]
+        if document_type:
+            documents = [doc for doc in documents if doc.get("document_type") == document_type]
+
+        total = len(documents)
+        sliced = documents[offset : offset + limit]
+        return {"total": total, "count": len(sliced), "items": sliced}
+
+    def get_document(self, document_id: str) -> Optional[Dict]:
+        with self._registry_lock:
+            registry = self._load_json(self.registry_file)
+        for item in registry.get("documents", []):
+            if item.get("id") == document_id:
+                return item
+        return None
+
+    def update_document(self, document_id: str, metadata_updates: Dict[str, Any]) -> Optional[Dict]:
+        with self._registry_lock:
+            registry = self._load_json(self.registry_file)
+            updated = None
+            for item in registry.get("documents", []):
+                if item.get("id") != document_id:
+                    continue
+                item["metadata"] = {**item.get("metadata", {}), **metadata_updates}
+                item["updated_at"] = datetime.now().isoformat()
+                updated = item
+                break
+            if updated:
+                self._save_json(self.registry_file, registry)
+        return updated
+
+    def delete_document(self, document_id: str, delete_vectors: bool = True) -> bool:
+        with self._registry_lock:
+            registry = self._load_json(self.registry_file)
+            documents = registry.get("documents", [])
+            target = None
+            for item in documents:
+                if item.get("id") == document_id:
+                    target = item
+                    break
+
+            if target is None:
+                return False
+
+            if delete_vectors:
+                self.vector_store.delete_documents(target["collection"], target.get("chunk_ids", []))
+
+            registry["documents"] = [item for item in documents if item.get("id") != document_id]
+            self._save_json(self.registry_file, registry)
+
+        return True
+
+    def add_manual_fallback(self, url: str, reason: str, context: Optional[Dict] = None) -> Dict:
+        item = {
+            "id": str(uuid.uuid4()),
+            "url": url,
+            "reason": reason,
+            "context": context or {},
+            "status": "pending",
+            "created_at": datetime.now().isoformat(),
+            "resolved_at": None,
+            "notes": None,
+        }
+
+        with self._registry_lock:
+            queue = self._load_json(self.manual_fallback_file)
+            existing = [entry for entry in queue.get("items", []) if entry.get("url") == url and entry.get("status") == "pending"]
+            if existing:
+                return existing[0]
+
+            queue.setdefault("items", []).append(item)
+            self._save_json(self.manual_fallback_file, queue)
+
+        return item
+
+    def list_manual_fallback(self, status: Optional[str] = None) -> Dict:
+        with self._registry_lock:
+            queue = self._load_json(self.manual_fallback_file)
+
+        items = queue.get("items", [])
+        if status:
+            items = [item for item in items if item.get("status") == status]
+        return {"count": len(items), "items": items}
+
+    def resolve_manual_fallback(self, item_id: str, notes: Optional[str] = None) -> Optional[Dict]:
+        with self._registry_lock:
+            queue = self._load_json(self.manual_fallback_file)
+            updated = None
+            for item in queue.get("items", []):
+                if item.get("id") != item_id:
+                    continue
+                item["status"] = "resolved"
+                item["resolved_at"] = datetime.now().isoformat()
+                item["notes"] = notes
+                updated = item
+                break
+            if updated:
+                self._save_json(self.manual_fallback_file, queue)
+
+        return updated
+
+    def save_scrape_run(self, run_payload: Dict) -> str:
+        run_id = run_payload.get("run_id") or str(uuid.uuid4())
+        run_payload["run_id"] = run_id
+        run_payload["saved_at"] = datetime.now().isoformat()
+
+        output_path = os.path.join(self.scrape_runs_dir, f"scrape_run_{run_id}.json")
+        with open(output_path, "w", encoding="utf-8") as file:
+            json.dump(run_payload, file, indent=2)
+
+        return output_path
+
     def get_knowledge_summary(self) -> Dict:
         stats = {}
-        for collection_name in ["marking_schemes", "examiner_reports", "technical_articles"]:
+        for collection_name in ["marking_schemes", "examiner_reports", "technical_articles", "student_answers"]:
             stats[collection_name] = self.vector_store.get_collection_stats(collection_name)
 
-        ingested_files = list(Path(self.data_dir).glob("ingestion_*.json"))
+        with self._registry_lock:
+            registry = self._load_json(self.registry_file)
+            queue = self._load_json(self.manual_fallback_file)
+
         return {
             "vector_stats": stats,
-            "ingested_files_count": len(ingested_files),
+            "documents_count": len(registry.get("documents", [])),
+            "manual_fallback_pending": len([item for item in queue.get("items", []) if item.get("status") == "pending"]),
             "status": "ready",
         }
+
+    def _ingest_technical_text(self, raw_text: str, base_metadata: Dict) -> Dict:
+        cleaned = self.processor.clean_text(raw_text)
+        if len(cleaned) < 80:
+            return {"success": False, "error": "Insufficient text extracted from technical source"}
+
+        text_chunks = self._chunk_text_for_rag(cleaned)
+        if not text_chunks:
+            return {"success": False, "error": "No chunks generated from technical content"}
+
+        payload: List[Dict] = []
+        for index, chunk_text in enumerate(text_chunks):
+            payload.append(
+                {
+                    "text": chunk_text,
+                    "metadata": {
+                        **base_metadata,
+                        "chunk_type": "technical_reference",
+                        "chunk_index": index,
+                        "chunk_total": len(text_chunks),
+                    },
+                }
+            )
+
+        ids = self.vector_store.add_document_chunks(
+            collection_name="technical_articles",
+            chunks=[item["text"] for item in payload],
+            metadatas=[item["metadata"] for item in payload],
+        )
+
+        source = base_metadata.get("source_url") or base_metadata.get("source_file") or "technical_source"
+        document_id = self._register_document(
+            collection="technical_articles",
+            document_type="technical_article",
+            source=str(source),
+            metadata=base_metadata,
+            chunk_ids=ids,
+        )
+
+        record_file = self._save_ingestion_record(
+            document_id=document_id,
+            source=str(source),
+            collection="technical_articles",
+            metadata=base_metadata,
+            chunk_count=len(text_chunks),
+            chunk_ids=ids,
+        )
+
+        return {
+            "success": True,
+            "document_id": document_id,
+            "collection": "technical_articles",
+            "chunk_count": len(text_chunks),
+            "ids": ids,
+            "record_file": record_file,
+        }
+
+    def _register_document(
+        self,
+        collection: str,
+        document_type: str,
+        source: str,
+        metadata: Dict,
+        chunk_ids: List[str],
+    ) -> str:
+        document_id = str(uuid.uuid4())
+        record = {
+            "id": document_id,
+            "collection": collection,
+            "document_type": document_type,
+            "source": source,
+            "metadata": metadata,
+            "chunk_ids": chunk_ids,
+            "chunk_count": len(chunk_ids),
+            "created_at": datetime.now().isoformat(),
+            "updated_at": None,
+        }
+
+        with self._registry_lock:
+            registry = self._load_json(self.registry_file)
+            registry.setdefault("documents", []).append(record)
+            self._save_json(self.registry_file, registry)
+
+        return document_id
 
     def _chunk_marking_scheme(self, text: str, base_metadata: Dict) -> List[Dict]:
         chunks: List[Dict] = []
@@ -550,52 +852,6 @@ class KnowledgeBase:
 
         return sections
 
-    def _ingest_technical_text(self, raw_text: str, base_metadata: Dict) -> Dict:
-        cleaned = self.processor.clean_text(raw_text)
-        if len(cleaned) < 80:
-            return {"success": False, "error": "Insufficient text extracted from technical source"}
-
-        text_chunks = self._chunk_text_for_rag(cleaned)
-        if not text_chunks:
-            return {"success": False, "error": "No chunks generated from technical content"}
-
-        chunk_payloads: List[Dict] = []
-        for index, chunk_text in enumerate(text_chunks):
-            chunk_payloads.append(
-                {
-                    "text": chunk_text,
-                    "metadata": {
-                        **base_metadata,
-                        "chunk_type": "technical_reference",
-                        "chunk_index": index,
-                        "chunk_total": len(text_chunks),
-                    },
-                }
-            )
-
-        ids = self.vector_store.add_document_chunks(
-            collection_name="technical_articles",
-            chunks=[chunk["text"] for chunk in chunk_payloads],
-            metadatas=[chunk["metadata"] for chunk in chunk_payloads],
-        )
-
-        source = base_metadata.get("source_url") or base_metadata.get("source_file") or "technical_source"
-        record_file = self._save_ingestion_record(
-            source=str(source),
-            collection="technical_articles",
-            metadata=base_metadata,
-            chunk_count=len(text_chunks),
-            chunk_ids=ids,
-        )
-
-        return {
-            "success": True,
-            "collection": "technical_articles",
-            "chunk_count": len(text_chunks),
-            "ids": ids,
-            "record_file": record_file,
-        }
-
     def _extract_article_links(self, index_url: str, html: str) -> List[str]:
         parser = LinkExtractor()
         parser.feed(html)
@@ -691,6 +947,7 @@ class KnowledgeBase:
 
     def _save_ingestion_record(
         self,
+        document_id: str,
         source: str,
         collection: str,
         metadata: Dict,
@@ -698,6 +955,7 @@ class KnowledgeBase:
         chunk_ids: List[str],
     ) -> str:
         record = {
+            "document_id": document_id,
             "source": source,
             "collection": collection,
             "metadata": metadata,
@@ -713,3 +971,15 @@ class KnowledgeBase:
 
         return record_path
 
+    def _ensure_json_file(self, file_path: str, default_payload: Dict) -> None:
+        if not os.path.exists(file_path):
+            with open(file_path, "w", encoding="utf-8") as file:
+                json.dump(default_payload, file, indent=2)
+
+    def _load_json(self, file_path: str) -> Dict:
+        with open(file_path, "r", encoding="utf-8") as file:
+            return json.load(file)
+
+    def _save_json(self, file_path: str, payload: Dict) -> None:
+        with open(file_path, "w", encoding="utf-8") as file:
+            json.dump(payload, file, indent=2)

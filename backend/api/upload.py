@@ -15,13 +15,14 @@ from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, UploadFile
 
+from backend.services.knowledge_base import KnowledgeBase
 from backend.services.processing_service import ProcessingService
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-
 processing_service = ProcessingService()
+knowledge_base = KnowledgeBase()
 
 # In-memory storage (replace with a persistent database in production).
 uploads = {}
@@ -147,6 +148,21 @@ def process_file_background(upload_id: str) -> None:
         upload["updated_at"] = datetime.now().isoformat()
         upload["processed_data"] = process_result
 
+        # Store answer in student_answers collection for consistency retrieval.
+        try:
+            answer_ingest = knowledge_base.ingest_student_answer(
+                answer_text=process_result.get("cleaned_text", ""),
+                metadata={
+                    "paper": upload.get("paper", "AA"),
+                    "upload_id": upload_id,
+                    "question_number": upload.get("question_number"),
+                    "source_file": upload.get("filename"),
+                },
+            )
+            upload["student_answer_ingest"] = answer_ingest
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Student answer ingestion failed for %s: %s", upload_id, exc)
+
         upload["status"] = "analyzing"
         upload["updated_at"] = datetime.now().isoformat()
 
@@ -171,21 +187,17 @@ def process_file_background(upload_id: str) -> None:
             "question_count": process_result.get("question_count", 0),
             "question_marks": [
                 {
-                    "point": "Question 1 (detected from document)",
-                    "awarded": 1.0,
-                    "explanation": "Based on extracted content",
+                    "point": "Document structure analysis",
+                    "awarded": 1.0 if process_result.get("question_count", 0) > 0 else 0.5,
+                    "explanation": "Automatically extracted question boundaries and key sections.",
                 },
                 {
-                    "point": "Question 2 (detected from document)",
+                    "point": "Content extraction quality",
                     "awarded": 0.5,
-                    "explanation": "Partially correct",
+                    "explanation": "Text extraction and cleanup completed successfully.",
                 },
             ],
-            "professional_marks": {
-                "structure": 0.5,
-                "terminology": 0.5,
-                "practicality": 0.5,
-            },
+            "professional_marks": process_result.get("professional_marks", {}),
             "feedback": f"Document processed successfully. Found {process_result.get('question_count', 0)} questions.",
             "citations": ["Based on extracted text"],
             "created_at": datetime.now().isoformat(),

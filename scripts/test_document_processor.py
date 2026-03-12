@@ -1,4 +1,4 @@
-"""
+﻿"""
 Test script for document processor.
 Run with: python scripts/test_document_processor.py
 """
@@ -13,7 +13,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from backend.services.document_processor import DocumentProcessor
 
 
-def test_with_sample() -> None:
+def run_sample_checks() -> None:
     """Test processor behavior using in-memory sample text."""
     processor = DocumentProcessor()
 
@@ -64,7 +64,7 @@ def test_with_sample() -> None:
     print("\nAll tests completed.")
 
 
-def test_with_real_file(file_path: str) -> None:
+def run_real_file_check(file_path: str) -> None:
     """Test processor with a real PDF or DOCX file."""
     if not os.path.exists(file_path):
         print(f"File not found: {file_path}")
@@ -86,7 +86,8 @@ def test_with_real_file(file_path: str) -> None:
 
 
 if __name__ == "__main__":
-    test_with_sample()
+    run_sample_checks()
 
     if len(sys.argv) > 1:
-        test_with_real_file(sys.argv[1])
+        run_real_file_check(sys.argv[1])
+

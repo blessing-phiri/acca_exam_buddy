@@ -34,7 +34,7 @@ class HashEmbeddingFunction:
         for text in input:
             vec = [0.0] * self.dimension
             for index, byte in enumerate(text.encode("utf-8", errors="ignore")):
-                vec[index % self.dimension] += (byte / 255.0)
+                vec[index % self.dimension] += byte / 255.0
 
             norm = math.sqrt(sum(value * value for value in vec))
             if norm > 0:
@@ -66,7 +66,6 @@ class VectorStore:
     def _build_embedding_function(self):
         provider = os.getenv("EMBEDDING_PROVIDER", "auto").strip().lower()
 
-        # OpenAI can be auto-selected when a key is present.
         if provider in {"auto", "openai"}:
             openai_key = os.getenv("OPENAI_API_KEY", "").strip()
             if openai_key:
@@ -76,7 +75,6 @@ class VectorStore:
                 except Exception as exc:  # noqa: BLE001
                     logger.warning("OpenAI embedding init failed: %s", exc)
 
-        # Google is opt-in to avoid surprise failures from unrelated env vars.
         if provider == "google":
             google_key = os.getenv("GOOGLE_API_KEY", "").strip() or os.getenv("GEMINI_API_KEY", "").strip()
             if not google_key:
@@ -85,7 +83,10 @@ class VectorStore:
                 os.environ.setdefault("GEMINI_API_KEY", google_key)
                 for class_name, kwargs in [
                     ("GoogleGenaiEmbeddingFunction", {"model_name": "gemini-embedding-001"}),
-                    ("GoogleGenerativeAiEmbeddingFunction", {"api_key": google_key, "model_name": "gemini-embedding-001"}),
+                    (
+                        "GoogleGenerativeAiEmbeddingFunction",
+                        {"api_key": google_key, "model_name": "gemini-embedding-001"},
+                    ),
                     ("GooglePalmEmbeddingFunction", {"api_key": google_key, "model_name": "models/embedding-004"}),
                 ]:
                     embedding_class = getattr(embedding_functions, class_name, None)
@@ -96,7 +97,6 @@ class VectorStore:
                     except Exception as exc:  # noqa: BLE001
                         logger.warning("Google embedding init failed via %s: %s", class_name, exc)
 
-        # Chroma default is also opt-in because it downloads/caches a model.
         if provider == "default":
             try:
                 default_func = embedding_functions.DefaultEmbeddingFunction()
@@ -106,6 +106,7 @@ class VectorStore:
                 logger.warning("Default embedding init failed, using local hash fallback: %s", exc)
 
         return HashEmbeddingFunction()
+
     def _init_collections(self) -> None:
         self.collections["marking_schemes"] = self._get_or_create_collection(
             "marking_schemes", metadata={"description": "Official ACCA marking schemes"}
@@ -221,11 +222,32 @@ class VectorStore:
         semantic_results.sort(key=lambda item: item.get("combined_score", 0.0), reverse=True)
         return semantic_results[:n_results]
 
-    def delete_document(self, collection_name: str, document_id: str) -> None:
+    def get_documents(
+        self,
+        collection_name: str,
+        document_ids: Optional[List[str]] = None,
+        filter_dict: Optional[Dict] = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> Dict:
         if collection_name not in self.collections:
             raise ValueError(f"Collection {collection_name} not found")
-        self.collections[collection_name].delete(ids=[document_id])
-        logger.info("Deleted %s from %s", document_id, collection_name)
+
+        collection = self.collections[collection_name]
+        return collection.get(ids=document_ids, where=filter_dict, limit=limit, offset=offset)
+
+    def delete_document(self, collection_name: str, document_id: str) -> None:
+        self.delete_documents(collection_name, [document_id])
+
+    def delete_documents(self, collection_name: str, document_ids: List[str]) -> int:
+        if collection_name not in self.collections:
+            raise ValueError(f"Collection {collection_name} not found")
+        if not document_ids:
+            return 0
+
+        self.collections[collection_name].delete(ids=document_ids)
+        logger.info("Deleted %d chunks from %s", len(document_ids), collection_name)
+        return len(document_ids)
 
     def get_collection_stats(self, collection_name: str) -> Dict:
         if collection_name not in self.collections:
@@ -255,8 +277,6 @@ class VectorStore:
                 continue
             if isinstance(value, (str, int, float, bool)):
                 sanitized[key] = value
-                continue
-            sanitized[key] = str(value)
+            else:
+                sanitized[key] = str(value)
         return sanitized
-
-

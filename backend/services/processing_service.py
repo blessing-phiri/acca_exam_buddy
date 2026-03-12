@@ -50,6 +50,7 @@ class ProcessingService:
         raw_text = extraction_result.get("text", "")
         cleaned_text = self.processor.clean_text(raw_text)
         questions = self.processor.detect_questions(cleaned_text)
+        professional_marks = self.processor.extract_professional_marks(cleaned_text)
         metadata = self._extract_metadata(cleaned_text, extraction_result)
         doc_hash = hashlib.md5(raw_text.encode("utf-8")).hexdigest()
 
@@ -61,6 +62,7 @@ class ProcessingService:
             "cleaned_text": cleaned_text,
             "questions": questions,
             "metadata": metadata,
+            "professional_marks": professional_marks,
             "word_count": len(cleaned_text.split()),
             "char_count": len(cleaned_text),
             "processed_at": datetime.now().isoformat(),
@@ -74,7 +76,9 @@ class ProcessingService:
             "doc_hash": doc_hash,
             "question_count": len(questions),
             "word_count": processed_result["word_count"],
+            "cleaned_text": cleaned_text,
             "has_questions": len(questions) > 0,
+            "professional_marks": professional_marks,
             "metadata": metadata,
         }
 
@@ -146,3 +150,5 @@ class ProcessingService:
             "avg_words_per_doc": total_words // max(len(processed_files), 1),
             "storage_path": self.storage_path,
         }
+
+
