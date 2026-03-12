@@ -32,8 +32,8 @@ except ImportError:
     print("❌ ChromaDB not installed")
 
 try:
-    import pypdf2
-    print(f"PyPDF2: {pypdf2.__version__} ✓")
+    import PyPDF2
+    print(f"PyPDF2: {PyPDF2.__version__} ✓")
 except ImportError:
     print("❌ PyPDF2 not installed")
 
