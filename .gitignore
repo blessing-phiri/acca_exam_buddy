@@ -58,3 +58,19 @@ htmlcov/
 dist/
 build/
 *.egg-info/
+
+# Data files (but not the folders themselves)
+data/raw/**/*
+!data/raw/.gitkeep
+data/processed/**/*
+!data/processed/.gitkeep
+data/chroma_db/**/*
+!data/chroma_db/.gitkeep
+data/uploads/**/*
+!data/uploads/.gitkeep
+data/knowledge/**/*
+!data/knowledge/.gitkeep
+data/temp/**/*
+!data/temp/.gitkeep
+
+# But keep the folder structure with .gitkeep files

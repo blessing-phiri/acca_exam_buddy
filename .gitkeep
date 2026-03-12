@@ -1,0 +1,10 @@
+# Create .gitkeep in each folder to preserve structure
+echo $null >> data/raw/.gitkeep
+echo $null >> data/raw/marking_schemes/.gitkeep
+echo $null >> data/raw/examiner_reports/.gitkeep
+echo $null >> data/raw/technical/.gitkeep
+echo $null >> data/processed/.gitkeep
+echo $null >> data/chroma_db/.gitkeep
+echo $null >> data/uploads/.gitkeep
+echo $null >> data/knowledge/.gitkeep
+echo $null >> data/temp/.gitkeep
