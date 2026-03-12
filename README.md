@@ -58,6 +58,24 @@ Data Layer
   - S3/MinIO (uploaded and source documents)
 ```
 
+### 3.1 Architecture Diagrams
+
+High-value diagrams are included in the repository:
+
+- Full architecture set (12 diagrams): [docs/architecture.md](docs/architecture.md)
+- Full technical blueprint: [docs/technical_spec.md](docs/technical_spec.md)
+
+System context snapshot:
+
+```mermaid
+flowchart LR
+    Student[ACCA Student] -->|Upload answers, view results| Platform[ACCA AA AI Marker]
+    Tutor[ACCA Tutor] -->|Validate and review| Platform
+    Platform -->|Marking prompts| LLM[DeepSeek/MiniMax API]
+    Platform -->|Embedding requests| EMB[text-embedding-004 API]
+    Platform -->|Notifications| Email[Email Service]
+```
+
 ## 4. Project Structure
 
 ```text
@@ -240,3 +258,4 @@ pytest
 ## 15. License
 
 MIT
+
