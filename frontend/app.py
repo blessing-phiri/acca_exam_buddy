@@ -15,6 +15,12 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# Initialize session state
+if 'show_results' not in st.session_state:
+    st.session_state['show_results'] = False
+if 'last_result' not in st.session_state:
+    st.session_state['last_result'] = None
+
 # Custom CSS
 st.markdown("""
     <style>
@@ -91,22 +97,96 @@ with col1:
                 placeholder="e.g., 1(b) or leave blank for auto-detect"
             )
         
-        submitted = st.form_submit_button("🚀 Upload and Mark", type="primary")
-        
-        if submitted and uploaded_file is not None:
-            with st.spinner("Processing your answer..."):
-                # This is where we'll call the backend
-                st.success("✅ Upload successful! Processing started.")
-                st.info("⏳ Estimated time: 1-2 minutes")
+submitted = st.form_submit_button("🚀 Upload and Mark", type="primary")
+
+if submitted and uploaded_file is not None:
+    # Check backend connection
+    if not api_client.health_check():
+        st.error("❌ Backend not connected. Please start the backend server.")
+    else:
+        with st.spinner("Uploading file..."):
+            try:
+                # Upload file
+                result = api_client.upload_file(uploaded_file, paper, question)
+                upload_id = result["upload_id"]
+                st.success("✅ Upload successful!")
                 
-                # Placeholder for progress
+                # Show progress
+                progress_text = st.empty()
                 progress_bar = st.progress(0)
-                for i in range(100):
-                    # Simulate progress
-                    progress_bar.progress(i + 1)
                 
-                st.markdown('<div class="success-box">✅ Marking complete! Check the Results tab.</div>', 
-                          unsafe_allow_html=True)
+                # Poll for status
+                import time
+                while True:
+                    status = api_client.get_status(upload_id)
+                    progress_bar.progress(status["progress"] / 100)
+                    progress_text.text(f"Status: {status['status']} ({status['progress']}%)")
+                    
+                    if status["status"] == "complete":
+                        break
+                    elif status["status"] == "failed":
+                        st.error("❌ Processing failed")
+                        break
+                    
+                    time.sleep(1)
+                
+                if status["status"] == "complete":
+                    # Get results
+                    result_data = api_client.get_result(status["result_id"])
+                    
+                    # Store in session state
+                    st.session_state['last_result'] = result_data
+                    st.session_state['show_results'] = True
+                    
+                    st.success("✅ Marking complete!")
+                    
+            except Exception as e:
+                st.error(f"❌ Error: {str(e)}")
+# After the form, show results if available
+if st.session_state.get('show_results', False):
+    st.markdown("---")
+    st.markdown('<h2 class="sub-header">📊 Marking Results</h2>', unsafe_allow_html=True)
+    
+    result = st.session_state['last_result']
+    
+    # Score card
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Total Score", f"{result['total_marks']}/{result['max_marks']}")
+    with col2:
+        st.metric("Percentage", f"{result['percentage']}%")
+    with col3:
+        st.metric("Professional Marks", f"{sum(result['professional_marks'].values())}/2")
+    
+    # Question breakdown
+    st.markdown("### 📝 Question Breakdown")
+    for point in result['question_marks']:
+        col_a, col_b = st.columns([3, 1])
+        with col_a:
+            st.markdown(f"**{point['point']}**")
+            st.caption(point['explanation'])
+        with col_b:
+            marks = point['awarded']
+            if marks == 1.0:
+                st.markdown(f"<h3 style='color: green;'>✓ {marks}</h3>", unsafe_allow_html=True)
+            elif marks == 0.5:
+                st.markdown(f"<h3 style='color: orange;'>½ {marks}</h3>", unsafe_allow_html=True)
+            else:
+                st.markdown(f"<h3 style='color: red;'>✗ {marks}</h3>", unsafe_allow_html=True)
+    
+    # Professional marks breakdown
+    st.markdown("### 🎯 Professional Marks")
+    for skill, mark in result['professional_marks'].items():
+        st.markdown(f"- **{skill.capitalize()}**: {mark}/0.5")
+    
+    # Feedback
+    st.markdown("### 💬 Feedback")
+    st.info(result['feedback'])
+    
+    # Citations
+    with st.expander("📚 View Citations"):
+        for citation in result['citations']:
+            st.markdown(f"- {citation}")
 
 with col2:
     st.markdown('<h2 class="sub-header">📋 Instructions</h2>', unsafe_allow_html=True)
